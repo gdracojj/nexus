@@ -118,7 +118,6 @@ nexus/
 ├── requirements.txt          # Dependências do projeto Python
 └── README.md                 # Documentação do projeto
 ```
-
 ---
 
 ## 🚀 Como Executar o Projeto Localmente
