@@ -25,10 +25,12 @@ def listar_licitacoes(uf: str, produto: str = ""):
             produto=produto,
         )
 
-    except Exception:
+    except Exception as erro:
+        print(f"ERRO PNCP: {erro}")
+
         raise HTTPException(
             status_code=502,
-            detail="Não foi possível consultar o PNCP agora.",
+            detail=str(erro),
         )
 
     return {
@@ -42,6 +44,9 @@ def listar_licitacoes(uf: str, produto: str = ""):
 
 app.mount(
     "/",
-    StaticFiles(directory="frontend", html=True),
+    StaticFiles(
+        directory="frontend",
+        html=True,
+    ),
     name="frontend",
 )

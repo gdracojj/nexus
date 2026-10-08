@@ -1,33 +1,49 @@
 import requests
+from datetime import datetime, timedelta
 
 from app.pncp.parser import normalizar_licitacao
 
 
 def buscar_licitacoes(estado: str):
+    url = "https://pncp.gov.br/api/consulta/v1/contratacoes/proposta"
 
-    url = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao"
+    hoje = datetime.now()
+    data_inicio = hoje.strftime("%Y%m%d")
+    data_fim = (hoje + timedelta(days=7)).strftime("%Y%m%d")
 
-    parametros = {
-        "dataInicial": "20260901",
-        "dataFinal": "20260930",
-        "codigoModalidadeContratacao": 6,
-        "uf": estado,
-        "pagina": 1,
-    }
+    pagina = 1
+    todas_licitacoes = []
 
-    resposta = requests.get(
-        url,
-        params=parametros,
-        timeout=30,
-    )
+    while True:
+        parametros = {
+            "dataInicial": data_inicio,
+            "dataFinal": data_fim,
+            "codigoModalidadeContratacao": 6,
+            "uf": estado,
+            "pagina": pagina,
+        }
 
-    resposta.raise_for_status()
+        resposta = requests.get(
+            url,
+            params=parametros,
+            timeout=30,
+        )
 
-    dados = resposta.json()
+        resposta.raise_for_status()
 
-    licitacoes_pncp = dados["data"]
+        dados = resposta.json()
+
+        licitacoes_pagina = dados.get("data", [])
+        todas_licitacoes.extend(licitacoes_pagina)
+
+        total_paginas = dados.get("totalPaginas", 1)
+
+        if pagina >= total_paginas:
+            break
+
+        pagina += 1
 
     return [
         normalizar_licitacao(licitacao)
-        for licitacao in licitacoes_pncp
+        for licitacao in todas_licitacoes
     ]
