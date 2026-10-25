@@ -1,11 +1,10 @@
-# NEXUS — Plataforma de Inteligência e Gestão de Licitações Públicas
+# Nexus — Plataforma de Inteligência e Gestão de Licitações Públicas
 
 ![Status do Projeto](https://img.shields.io/badge/status-em_desenvolvimento-orange)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688?logo=fastapi)
-![License](https://img.shields.io/badge/license-MIT-green)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.143.0-009688?logo=fastapi)
 
-O **NEXUS** é uma solução de inteligência e gestão para oportunidades em licitações públicas, concebida para atender às necessidades operacionais reais da **RCCS Licitações**. A plataforma centraliza dados do **Portal Nacional de Contratações Públicas (PNCP)**, otimizando desde a fase de captação de oportunidades até o acompanhamento do ciclo pós-contratação.
+O **NEXUS** consulta oportunidades publicadas no **Portal Nacional de Contratações Públicas (PNCP)** e permite filtrá-las por estado e termo do objeto. O projeto foi concebido a partir de necessidades operacionais da **RCCS Licitações** e também é um projeto de portfólio sobre integração com APIs externas e desenvolvimento backend.
 
 Além de sua aplicação prática no mercado, o NEXUS é um projeto de portfólio focado nas disciplinas de **Desenvolvimento Backend**, **Engenharia de Dados**, **Resiliência de Integração** e **Arquitetura de Software**.
 
@@ -13,30 +12,30 @@ Além de sua aplicação prática no mercado, o NEXUS é um projeto de portfóli
 
 ## 📌 Visão Geral e Problema de Negócio
 
-A identificação de oportunidades no mercado público costuma exigir pesquisas manuais frequentes, descentralizadas e sujeitas a perda de prazos. Após a homologação da licitação, surge um segundo desafio operacional: o controle de Atas de Registro de Preços, saldo de quantitativos, vigências e reajustes contratuais.
+A identificação de oportunidades no mercado público pode exigir pesquisas frequentes no PNCP. Hoje, o NEXUS consulta o portal em tempo de execução e apresenta os resultados filtrados. O controle de Atas de Registro de Preços, saldos, vigências e reajustes é um objetivo futuro do produto; não está implementado nesta versão.
 
-O **NEXUS** foi idealizado para resolver essas duas dores em um único ecossistema:
+O projeto tem dois objetivos de produto, em estágios diferentes:
 
-1. **Busca e Inteligência de Oportunidades:** Localização e filtragem ágil de editais por estado (UF), palavra-chave/produto, modalidade e prazos de encerramento.
-2. **Gestão Pós-Contratação:** Acompanhamento contínuo do ciclo de vida dos contratos e atas, garantindo controle sobre saldos disponíveis, vencimentos e renovações.
+1. **Disponível:** consulta de contratações no PNCP, normalização dos registros e filtragem local por UF e termo textual no objeto.
+2. **Planejado:** gestão pós-contratação de Atas de Registro de Preços, incluindo saldos e vigências.
 
 ---
 
 ## 🎯 Status Atual do Projeto
 
-Atualmente, o projeto encontra-se na **Fase 1 (Consolidação da Coleta e API REST)**. O sistema já realiza consultas diretas à API de propostas do PNCP, normaliza a estrutura dos dados recebidos, aplica filtros de negócio e expõe esses resultados por meio de uma API REST construída em FastAPI com um painel frontend inicial.
+O projeto oferece uma API FastAPI e um painel frontend inicial. A aplicação consulta diretamente o endpoint de contratações do PNCP, percorre as páginas informadas pela API, normaliza os registros e filtra por UF e termo do objeto. Não há persistência conectada ao fluxo da aplicação: os dados são obtidos novamente a cada consulta.
 
 ---
 
 ## 🛠️ Tecnologias Utilizadas e Planejadas
 
-### Já Utilizadas na Implementação Atual
-* **Linguagem:** Python
-* **Framework Web:** FastAPI (com uvicorn)
-* **Requisições HTTP & Integração:** Requests
-* **Interface & Frontend:** HTML5, CSS3, JavaScript (Vanilla ES6)
-* **Ferramentas de Desenvolvimento & SO:** Git, GitHub, Linux, DBeaver
-* **Formato de Dados:** JSON / REST
+### Implementadas
+* **Backend:** Python 3.10+, FastAPI e Uvicorn.
+* **Integração HTTP:** Requests para consultar o PNCP.
+* **Frontend:** HTML, CSS e JavaScript sem framework.
+* **Comunicação:** API HTTP com payloads JSON.
+
+As dependências de execução estão declaradas em `requirements.txt`. O arquivo também inclui `psycopg2-binary`, mas a aplicação ainda não usa PostgreSQL para persistir dados.
 
 ### Planejadas para as Próximas Fases
 * **Banco de Dados Relacional:** PostgreSQL
@@ -66,8 +65,8 @@ Atualmente, as pesquisas feitas na interface consultam diretamente a API do PNCP
 [ Filtro por UF/Produto ] ◀── [ Parser / Normalização ]
 ```
 
-### 2. Arquitetura-Alvo (Ingestão Assíncrona & Data Pipeline)
-Para evitar lentidão e dependência excessiva das taxas de limite da API externa, a arquitetura está migrando para um modelo desacoplado:
+### 2. Arquitetura planejada (ingestão e persistência)
+Uma evolução possível é desacoplar a consulta do usuário da API externa e armazenar os dados em uma base persistente. Esse fluxo ainda não está implementado:
 
 ```
 [ API PNCP ] ──▶ [ Ingestão / ETL ] ──▶ [ Parser ] ──▶ [ PostgreSQL ]
@@ -83,17 +82,17 @@ Para evitar lentidão e dependência excessiva das taxas de limite da API extern
 A aplicação consome o seguinte endpoint oficial do PNCP:
 `https://pncp.gov.br/api/consulta/v1/contratacoes/proposta`
 
-### Tratamento de Paginação e Desafio de Rate Limit
-Durante o desenvolvimento da rotina de paginação (que consolida os registros retornados pela API em uma lista única utilizando `extend()`), identificou-se que consultas extensas (ex: 30+ páginas) disparavam respostas **HTTP 429 (Too Many Requests)** a partir da 10ª página.
+### Paginação e limite de taxa
+O cliente percorre as páginas usando o campo `totalPaginas` retornado pelo PNCP e agrega os registros antes de normalizá-los. Não há um limite máximo de páginas configurado localmente. Respostas HTTP 429 são tratadas com novas tentativas; os demais erros HTTP e falhas de conexão são propagados para a API do NEXUS.
 
 ### Camada Inicial de Resiliência Implementada
-Para contornar o limite de taxa do servidor de origem, foi implementada uma política de resiliência em `app/pncp/client.py`:
-* **Intervalo programado:** Pausas entre as requisições de páginas sucessivas.
-* **Detecção de Retry-After:** Leitura dos cabeçalhos HTTP para respeitar o tempo de espera solicitado pelo PNCP.
-* **Exponential Backoff:** Em respostas 429 sem o cabeçalho `Retry-After`, o código realiza retries progressivos utilizando a fórmula de tempo $2^{\text{tentativa}}$.
-* **Limite de Tentativas:** Limite máximo de 5 retries antes de registrar a falha.
+O comportamento implementado em `app/pncp/client.py` é:
+* **Intervalo entre páginas:** pausa de 1 segundo entre páginas sucessivas.
+* **Tentativas para HTTP 429:** até 5 tentativas no total, incluindo a primeira requisição. Portanto, após a resposta inicial, podem ocorrer até 4 novas tentativas.
+* **`Retry-After`:** aceita segundos inteiros (delta-seconds) ou uma data HTTP. Valores ausentes ou inválidos usam espera exponencial (`2`, `4`, `8` e `16` segundos nas tentativas que ainda podem ser repetidas). Datas passadas resultam em espera zero. Esperas solicitadas acima de 60 segundos causam falha imediata.
+* **Outras falhas:** timeouts, erros de conexão e status HTTP diferentes de 429 não são repetidos pelo cliente.
 
-> ⚠️ **Nota de Engenharia:** Essa estratégia representa uma **primeira camada de resiliência** para mitigar falhas transitórias. Nos testes sob alto volume, ainda foram observadas lentidões e picos de HTTP 429. Esse comportamento motivou a decisão arquitetural prioritária de migrar para armazenamento persistente em PostgreSQL, eliminando consultas síncronas exaustivas à API externa.
+> A consulta é síncrona e depende da disponibilidade e do tempo de resposta do PNCP. Persistência local e coleta desacoplada permanecem no roadmap.
 
 ---
 
@@ -102,22 +101,39 @@ Para contornar o limite de taxa do servidor de origem, foi implementada uma pol�
 ```text
 nexus/
 ├── app/
+│   ├── core/
+│   │   ├── config.py          # vazio; reservado
+│   │   └── logger.py          # vazio; reservado
+│   ├── database/
+│   │   ├── __init__.py        # vazio
+│   │   ├── connection.py      # vazio; sem conexão ativa ao PostgreSQL
+│   │   └── models.py          # vazio; sem modelos persistentes
 │   ├── pncp/
 │   │   ├── client.py         # Cliente HTTP, paginação e políticas de retry/backoff
 │   │   └── parser.py         # Normalização do payload JSON do PNCP
+│   ├── repositories/
+│   │   └── licitacao_repository.py  # vazio; repositório não implementado
 │   ├── services/
 │   │   └── licitacao_service.py  # Regras de negócio e filtragem
-│   └── main.py               # Inicialização da aplicação FastAPI e rotas REST
+│   └── main.py               # Aplicação FastAPI, rota REST e montagem do frontend
 ├── frontend/
-│   ├── index.html            # Estrutura do painel de controle
-│   ├── style.css             # Estilização (design escuro / estética operacional)
-│   ├── variables.css         # Variáveis de temas e paleta de cores (#ee6018, #a0ca92)
-│   ├── app.js                # Lógica de consumo da API do NEXUS no frontend
-│   └── assets/               # Recursos visuais estáticos
+│   ├── app.js
+│   ├── assets.js
+│   ├── index.html
+│   ├── style.css
+│   ├── variables.css
+│   └── assets/
+│       ├── favicon.png
+│       ├── nexus-mark.png
+│       └── nexus-wordmark.png
+├── .env.example
 ├── .gitignore
-├── requirements.txt          # Dependências do projeto Python
+├── requirements.txt
 └── README.md                 # Documentação do projeto
 ```
+
+Não há diretório de testes versionado neste momento. Os módulos `app/core`, `app/database` e `app/repositories` listados como vazios ainda não participam do fluxo executado.
+
 ---
 
 ## 🚀 Como Executar o Projeto Localmente
@@ -144,7 +160,6 @@ nexus/
 
 3. **Instalar as dependências:**
    ```bash
-   pip install --upgrade pip
    pip install -r requirements.txt
    ```
 
@@ -157,6 +172,8 @@ nexus/
    * **Interface Web (Frontend):** [http://127.0.0.1:8000](http://127.0.0.1:8000)
    * **Documentação Interativa (Swagger UI):** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
+O comando de inicialização pressupõe que as dependências foram instaladas no ambiente virtual. Não há uma suíte de testes automatizados configurada no repositório; portanto, ainda não existe um comando de testes validado para documentar.
+
 ---
 
 ## 📡 Endpoints da API
@@ -168,7 +185,9 @@ Realiza a consulta de oportunidades vigentes no PNCP aplicadas aos filtros locai
 | Parâmetro | Tipo | Obrigatório | Descrição |
 | :--- | :--- | :--- | :--- |
 | `uf` | `string` | **Sim** | Sigla da Unidade Federativa com 2 caracteres (Ex: `RJ`, `SP`). |
-| `produto` | `string` | Não | Termo para busca textual no objeto da licitação (Ex: `material`, `software`). |
+| `produto` | `string` | Não | Termo opcional para busca sem distinção entre maiúsculas e minúsculas na descrição/objeto. O padrão é vazio. |
+
+`uf` é removido de espaços nas extremidades e convertido para maiúsculas. A rota verifica se possui exatamente dois caracteres; não valida se esses caracteres correspondem a uma UF oficial. A consulta do cliente envia ao PNCP a data atual e os sete dias seguintes, a modalidade de contratação `6` e o número da página.
 
 #### Exemplo de Chamada
 ```bash
@@ -179,21 +198,32 @@ curl -X GET "http://127.0.0.1:8000/api/licitacoes?uf=RJ&produto=material"
 ```json
 {
   "uf": "RJ",
-  "termo_pesquisado": "material",
-  "total_consultados": 150,
-  "total_filtrados": 12,
-  "licitacoes": [
+  "produto": "material",
+  "total_consultado": 150,
+  "total": 12,
+  "resultados": [
     {
-      "numero_compra": "00001/2026",
+      "numero": "00001/2026",
       "descricao": "Aquisição de material de expediente...",
       "codigo_unidade": "123456",
       "municipio": "Rio de Janeiro",
       "uf": "RJ",
-      "data_encerramento": "2026-10-15T23:59:59"
+      "data_encerramento_proposta": "2026-10-15T23:59:59"
     }
   ]
 }
 ```
+
+`total_consultado` conta os registros normalizados consultados; `total` conta os que passaram pelo filtro de UF e, quando informado, pelo termo em `produto`. A rota também pode responder:
+
+| Status | Situação | Corpo |
+| :--- | :--- | :--- |
+| `400` | `uf` com comprimento diferente de 2 | `{"detail":"Informe a sigla do estado com 2 letras."}` |
+| `422` | Parâmetro obrigatório ausente ou parâmetros que não passam pela validação do FastAPI | Corpo de validação do FastAPI |
+| `502` | Falha de requisição ao PNCP, incluindo timeout, conexão ou erro HTTP | `{"detail":"Não foi possível consultar o PNCP. Tente novamente mais tarde."}` |
+| `500` | Erro interno inesperado | `{"detail":"Erro interno ao processar a consulta."}` |
+
+As mensagens públicas dos erros `502` e `500` são genéricas; detalhes técnicos são enviados ao diagnóstico do servidor, não ao corpo da resposta.
 
 ---
 
@@ -204,7 +234,7 @@ O desenvolvimento do NEXUS é estruturado de forma iterativa e incremental:
 - [x] **Fase 1 — Consolidação da Coleta e API REST**
   - [x] Integração funcional com a API do PNCP.
   - [x] Normalização de payload em DTOs internos (`parser.py`).
-  - [x] Implementação de Rate Limiting e Exponential Backoff para erros 429.
+  - [x] Tentativas limitadas e espera exponencial para respostas HTTP 429.
   - [x] Endpoint FastAPI e Painel Frontend com estilização operacional.
 - [ ] **Fase 2 — Implementação do PostgreSQL & Modelagem de Dados** *(Prioridade Atual)*
   - [ ] Mapeamento rigoroso do schema do JSON completo da API do PNCP.
@@ -233,7 +263,7 @@ O desenvolvimento do NEXUS é estruturado de forma iterativa e incremental:
 
 ## 📄 Licença
 
-Este projeto está sob a licença [MIT](LICENSE).
+O repositório não contém atualmente um arquivo `LICENSE`; a licença do projeto ainda não está documentada.
 
 ---
 
