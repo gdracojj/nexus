@@ -1,5 +1,6 @@
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 
 import requests
 
@@ -10,6 +11,36 @@ URL_PNCP = "https://pncp.gov.br/api/consulta/v1/contratacoes/proposta"
 
 INTERVALO_ENTRE_PAGINAS = 1.0
 MAX_TENTATIVAS = 5
+MAX_ESPERA_RETRY_AFTER = 60
+
+
+def _calcular_espera_retry_after(
+    valor: str | None,
+    agora: datetime | None = None,
+) -> float | None:
+    if valor is None:
+        return None
+
+    valor = valor.strip()
+
+    if valor.isascii() and valor.isdecimal():
+        segundos = valor.lstrip("0") or "0"
+        if len(segundos) > len(str(MAX_ESPERA_RETRY_AFTER)):
+            return MAX_ESPERA_RETRY_AFTER + 1
+        espera = int(segundos)
+    else:
+        try:
+            data_retentativa = parsedate_to_datetime(valor)
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+        if data_retentativa is None or data_retentativa.tzinfo is None:
+            return None
+
+        agora = agora or datetime.now(timezone.utc)
+        espera = max(0, (data_retentativa - agora).total_seconds())
+
+    return espera
 
 
 def buscar_pagina(
@@ -30,11 +61,15 @@ def buscar_pagina(
             return resposta.json()
 
         retry_after = resposta.headers.get("Retry-After")
+        espera = _calcular_espera_retry_after(retry_after)
 
-        if retry_after:
-            espera = int(retry_after)
-        else:
+        if espera is None:
             espera = 2 ** tentativa
+        elif espera > MAX_ESPERA_RETRY_AFTER:
+            raise requests.exceptions.HTTPError(
+                "Retry-After excede o limite máximo de espera.",
+                response=resposta,
+            )
 
         print(
             f"PNCP rate limitado (429). "
