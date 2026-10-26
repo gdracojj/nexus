@@ -24,6 +24,16 @@ def test_buscar_licitacoes_processa_ate_o_limite_de_paginas(monkeypatch):
     )
 
 
+def test_buscar_licitacoes_aceita_resposta_vazia_com_zero_paginas(monkeypatch):
+    monkeypatch.setattr(
+        client,
+        "buscar_pagina",
+        lambda _url, _parametros: {"data": [], "totalPaginas": 0},
+    )
+
+    assert client.buscar_licitacoes("RJ") == []
+
+
 def test_buscar_licitacoes_rejeita_total_de_paginas_acima_do_limite(monkeypatch):
     chamadas = []
 
@@ -76,7 +86,7 @@ def test_limite_de_paginacao_retorna_502_generico_na_rota(monkeypatch):
     )
 
 
-@pytest.mark.parametrize("total_paginas", [0, -1, None, "2", True])
+@pytest.mark.parametrize("total_paginas", [-1, None, "2", True])
 def test_buscar_licitacoes_rejeita_total_de_paginas_invalido(
     monkeypatch,
     total_paginas,
@@ -88,4 +98,18 @@ def test_buscar_licitacoes_rejeita_total_de_paginas_invalido(
     )
 
     with pytest.raises(requests.exceptions.RequestException, match="inválido"):
+        client.buscar_licitacoes("RJ")
+
+
+def test_buscar_licitacoes_rejeita_registros_com_zero_paginas(monkeypatch):
+    monkeypatch.setattr(
+        client,
+        "buscar_pagina",
+        lambda _url, _parametros: {
+            "data": [{"numeroCompra": "1"}],
+            "totalPaginas": 0,
+        },
+    )
+
+    with pytest.raises(requests.exceptions.RequestException, match="zero"):
         client.buscar_licitacoes("RJ")

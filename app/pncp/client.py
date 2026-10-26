@@ -4,7 +4,10 @@ from email.utils import parsedate_to_datetime
 
 import requests
 
-from app.pncp.parser import normalizar_licitacao
+from app.pncp.parser import (
+    RegistroPNCPInvalidoError,
+    normalizar_licitacao,
+)
 
 
 URL_PNCP = "https://pncp.gov.br/api/consulta/v1/contratacoes/proposta"
@@ -115,11 +118,16 @@ def buscar_licitacoes(estado: str):
             parametros,
         )
 
-        total_paginas = dados.get("totalPaginas", 1)
+        if not isinstance(dados, dict):
+            raise requests.exceptions.RequestException(
+                "PNCP retornou uma resposta que não é um objeto JSON."
+            )
+
+        total_paginas = dados.get("totalPaginas")
         if (
             isinstance(total_paginas, bool)
             or not isinstance(total_paginas, int)
-            or total_paginas < 1
+            or total_paginas < 0
         ):
             raise requests.exceptions.RequestException(
                 "PNCP retornou um total de páginas inválido."
@@ -131,7 +139,15 @@ def buscar_licitacoes(estado: str):
                 f"o limite desta consulta é {MAX_PAGINAS_CONSULTA}."
             )
 
-        licitacoes_pagina = dados.get("data", [])
+        licitacoes_pagina = dados.get("data")
+        if not isinstance(licitacoes_pagina, list):
+            raise requests.exceptions.RequestException(
+                "PNCP retornou o campo 'data' fora do formato de lista."
+            )
+        if total_paginas == 0 and licitacoes_pagina:
+            raise requests.exceptions.RequestException(
+                "PNCP retornou registros com total de páginas igual a zero."
+            )
 
         todas_licitacoes.extend(licitacoes_pagina)
 
@@ -147,7 +163,13 @@ def buscar_licitacoes(estado: str):
 
         time.sleep(INTERVALO_ENTRE_PAGINAS)
 
-    return [
-        normalizar_licitacao(licitacao)
-        for licitacao in todas_licitacoes
-    ]
+    licitacoes_normalizadas = []
+    for indice, licitacao in enumerate(todas_licitacoes, start=1):
+        try:
+            licitacoes_normalizadas.append(normalizar_licitacao(licitacao))
+        except RegistroPNCPInvalidoError as erro:
+            raise requests.exceptions.RequestException(
+                f"PNCP retornou registro inválido na posição {indice}: {erro}"
+            ) from erro
+
+    return licitacoes_normalizadas
