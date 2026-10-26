@@ -35,7 +35,7 @@ def test_resposta_pncp_com_envelope_invalido_e_rejeitada(monkeypatch, payload):
     monkeypatch.setattr(
         client,
         "buscar_pagina",
-        lambda _url, _parametros: payload,
+        lambda _url, _parametros, **_kwargs: payload,
     )
 
     with pytest.raises(requests.exceptions.RequestException):
@@ -51,7 +51,7 @@ def test_registro_malformado_rejeita_lote_com_indice_sem_expor_payload(
     monkeypatch.setattr(
         client,
         "buscar_pagina",
-        lambda _url, _parametros: {
+        lambda _url, _parametros, **_kwargs: {
             "data": [registro_valido(), registro_invalido],
             "totalPaginas": 1,
         },
@@ -72,7 +72,7 @@ def test_registro_malformado_vira_502_com_mensagem_publica_generica(
     monkeypatch.setattr(
         client,
         "buscar_pagina",
-        lambda _url, _parametros: {
+        lambda _url, _parametros, **_kwargs: {
             "data": [{"numeroCompra": "DADO INTERNO DE TESTE"}],
             "totalPaginas": 1,
         },
