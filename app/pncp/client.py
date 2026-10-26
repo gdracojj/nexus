@@ -16,10 +16,37 @@ INTERVALO_ENTRE_PAGINAS = 1.0
 MAX_TENTATIVAS = 5
 MAX_ESPERA_RETRY_AFTER = 60
 MAX_PAGINAS_CONSULTA = 100
+PRAZO_TOTAL_CONSULTA_SEGUNDOS = 120.0
+TIMEOUT_REQUISICAO_SEGUNDOS = 30.0
+CODIGOS_HTTP_REPETIVEIS = frozenset({408, 429, 500, 502, 503, 504})
 
 
 class LimitePaginacaoPNCPError(requests.exceptions.RequestException):
     """O PNCP informou mais páginas do que esta consulta aceita processar."""
+
+
+class PrazoTotalConsultaPNPCError(requests.exceptions.RequestException):
+    """O prazo total da consulta ao PNCP foi excedido."""
+
+
+def _verificar_prazo(prazo_final: float) -> float:
+    tempo_restante = prazo_final - time.monotonic()
+    if tempo_restante <= 0:
+        raise PrazoTotalConsultaPNPCError(
+            "O prazo total da consulta ao PNCP foi excedido."
+        )
+    return tempo_restante
+
+
+def _aguardar_com_prazo(espera: float, prazo_final: float) -> None:
+    tempo_restante = _verificar_prazo(prazo_final)
+    if espera >= tempo_restante:
+        raise PrazoTotalConsultaPNPCError(
+            "O prazo total da consulta ao PNCP não permite outra tentativa."
+        )
+
+    time.sleep(espera)
+    _verificar_prazo(prazo_final)
 
 
 def _calcular_espera_retry_after(
@@ -54,17 +81,39 @@ def _calcular_espera_retry_after(
 def buscar_pagina(
     url: str,
     parametros: dict,
+    prazo_final: float | None = None,
 ) -> dict:
+    if prazo_final is None:
+        prazo_final = time.monotonic() + PRAZO_TOTAL_CONSULTA_SEGUNDOS
 
     for tentativa in range(1, MAX_TENTATIVAS + 1):
+        tempo_restante = _verificar_prazo(prazo_final)
+        try:
+            resposta = requests.get(
+                url,
+                params=parametros,
+                timeout=min(TIMEOUT_REQUISICAO_SEGUNDOS, tempo_restante),
+            )
+            _verificar_prazo(prazo_final)
+        except requests.exceptions.SSLError:
+            raise
+        except (
+            requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+        ):
+            if tentativa == MAX_TENTATIVAS:
+                raise
 
-        resposta = requests.get(
-            url,
-            params=parametros,
-            timeout=30,
-        )
+            espera = 2**tentativa
+            print(
+                f"Falha transitória de comunicação com o PNCP. "
+                f"Tentativa {tentativa}/{MAX_TENTATIVAS}. "
+                f"Aguardando {espera}s..."
+            )
+            _aguardar_com_prazo(espera, prazo_final)
+            continue
 
-        if resposta.status_code != 429:
+        if resposta.status_code not in CODIGOS_HTTP_REPETIVEIS:
             resposta.raise_for_status()
             return resposta.json()
 
@@ -79,21 +128,26 @@ def buscar_pagina(
                 response=resposta,
             )
 
+        if resposta.status_code == 429:
+            motivo = "rate limitado"
+        else:
+            motivo = f"resposta HTTP {resposta.status_code} transitória"
+
         print(
-            f"PNCP rate limitado (429). "
-            f"Tentativa {tentativa}/{MAX_TENTATIVAS}. "
+            f"PNCP {motivo}. Tentativa {tentativa}/{MAX_TENTATIVAS}. "
             f"Aguardando {espera}s..."
         )
 
         if tentativa == MAX_TENTATIVAS:
             resposta.raise_for_status()
 
-        time.sleep(espera)
+        _aguardar_com_prazo(espera, prazo_final)
 
     raise RuntimeError("Não foi possível consultar o PNCP.")
 
 
 def buscar_licitacoes(estado: str):
+    prazo_final = time.monotonic() + PRAZO_TOTAL_CONSULTA_SEGUNDOS
 
     hoje = datetime.now()
 
@@ -104,6 +158,7 @@ def buscar_licitacoes(estado: str):
     todas_licitacoes = []
 
     while True:
+        _verificar_prazo(prazo_final)
 
         parametros = {
             "dataInicial": data_inicio,
@@ -116,7 +171,9 @@ def buscar_licitacoes(estado: str):
         dados = buscar_pagina(
             URL_PNCP,
             parametros,
+            prazo_final=prazo_final,
         )
+        _verificar_prazo(prazo_final)
 
         if not isinstance(dados, dict):
             raise requests.exceptions.RequestException(
@@ -161,10 +218,11 @@ def buscar_licitacoes(estado: str):
 
         pagina += 1
 
-        time.sleep(INTERVALO_ENTRE_PAGINAS)
+        _aguardar_com_prazo(INTERVALO_ENTRE_PAGINAS, prazo_final)
 
     licitacoes_normalizadas = []
     for indice, licitacao in enumerate(todas_licitacoes, start=1):
+        _verificar_prazo(prazo_final)
         try:
             licitacoes_normalizadas.append(normalizar_licitacao(licitacao))
         except RegistroPNCPInvalidoError as erro:
@@ -172,4 +230,5 @@ def buscar_licitacoes(estado: str):
                 f"PNCP retornou registro inválido na posição {indice}: {erro}"
             ) from erro
 
+    _verificar_prazo(prazo_final)
     return licitacoes_normalizadas
