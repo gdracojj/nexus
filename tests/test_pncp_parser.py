@@ -3,6 +3,7 @@ import pytest
 from app.pncp.parser import (
     RegistroPNCPInvalidoError,
     normalizar_licitacao,
+    registro_para_persistencia,
 )
 from app.services.licitacao_service import filtrar_licitacoes
 
@@ -98,6 +99,44 @@ def test_campos_opcionais_nulos_nao_interrompem_o_filtro_do_servico():
     normalizada = normalizar_licitacao(registro)
 
     assert filtrar_licitacoes([normalizada], "RJ", "material") == [normalizada]
+
+
+def test_registro_para_persistencia_mapeia_identidade_valor_datas_e_payload():
+    registro = registro_valido()
+    registro.update(
+        numeroControlePNCP="12345678000199-1-000001/2026",
+        anoCompra=2026,
+        codigoModalidadeContratacao=6,
+        dataPublicacaoPncp="2026-10-20",
+        dataAberturaProposta="2026-10-22T09:00:00-03:00",
+        valorTotalEstimado=1234.5678,
+        situacaoCompraNome="Divulgada no PNCP",
+        orgaoEntidade={"cnpj": "12345678000199", "razaoSocial": "Órgão de teste"},
+    )
+
+    resultado = registro_para_persistencia(registro)
+
+    assert resultado["numero_controle_pncp"] == registro["numeroControlePNCP"]
+    assert resultado["cnpj_orgao"] == "12345678000199"
+    assert resultado["nome_orgao"] == "Órgão de teste"
+    assert resultado["codigo_modalidade"] == 6
+    assert resultado["ano"] == 2026
+    assert str(resultado["valor_estimado"]) == "1234.5678"
+    assert resultado["data_publicacao"].tzinfo is not None
+    assert resultado["data_abertura_proposta"].tzinfo is not None
+    assert resultado["payload"] is registro
+
+
+def test_registro_para_persistencia_aceita_campos_opcionais_ausentes():
+    registro = registro_valido()
+    registro["numeroControlePNCP"] = "12345678000199-1-000001/2026"
+
+    resultado = registro_para_persistencia(registro)
+
+    assert resultado["cnpj_orgao"] is None
+    assert resultado["valor_estimado"] is None
+    assert resultado["data_publicacao"] is None
+    assert resultado["data_abertura_proposta"] is None
 
 
 @pytest.mark.parametrize(

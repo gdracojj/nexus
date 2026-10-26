@@ -7,6 +7,7 @@ import requests
 from app.pncp.parser import (
     RegistroPNCPInvalidoError,
     normalizar_licitacao,
+    registro_para_persistencia,
 )
 
 
@@ -20,6 +21,16 @@ MAX_PAGINAS_CONSULTA = 100
 
 class LimitePaginacaoPNCPError(requests.exceptions.RequestException):
     """O PNCP informou mais páginas do que esta consulta aceita processar."""
+
+
+def parametros_consulta(estado: str, agora: datetime | None = None) -> dict:
+    hoje = agora or datetime.now()
+    return {
+        "dataInicial": hoje.strftime("%Y%m%d"),
+        "dataFinal": (hoje + timedelta(days=7)).strftime("%Y%m%d"),
+        "codigoModalidadeContratacao": 6,
+        "uf": estado,
+    }
 
 
 def _calcular_espera_retry_after(
@@ -93,25 +104,22 @@ def buscar_pagina(
     raise RuntimeError("Não foi possível consultar o PNCP.")
 
 
-def buscar_licitacoes(estado: str):
-
-    hoje = datetime.now()
-
-    data_inicio = hoje.strftime("%Y%m%d")
-    data_fim = (hoje + timedelta(days=7)).strftime("%Y%m%d")
+def buscar_licitacoes(
+    estado: str,
+    incluir_payload: bool = False,
+    parametros_base=None,
+    ao_receber_registros=None,
+    ao_consultar_pagina=None,
+):
+    if parametros_base is None:
+        parametros_base = parametros_consulta(estado)
 
     pagina = 1
     todas_licitacoes = []
 
     while True:
 
-        parametros = {
-            "dataInicial": data_inicio,
-            "dataFinal": data_fim,
-            "codigoModalidadeContratacao": 6,
-            "uf": estado,
-            "pagina": pagina,
-        }
+        parametros = {**parametros_base, "pagina": pagina}
 
         dados = buscar_pagina(
             URL_PNCP,
@@ -150,6 +158,10 @@ def buscar_licitacoes(estado: str):
             )
 
         todas_licitacoes.extend(licitacoes_pagina)
+        if ao_receber_registros is not None:
+            ao_receber_registros(len(licitacoes_pagina))
+        if ao_consultar_pagina is not None:
+            ao_consultar_pagina(pagina, len(licitacoes_pagina))
 
         print(
             f"PNCP: página {pagina}/{total_paginas} "
@@ -166,10 +178,16 @@ def buscar_licitacoes(estado: str):
     licitacoes_normalizadas = []
     for indice, licitacao in enumerate(todas_licitacoes, start=1):
         try:
-            licitacoes_normalizadas.append(normalizar_licitacao(licitacao))
+            if incluir_payload:
+                licitacoes_normalizadas.append(registro_para_persistencia(licitacao))
+            else:
+                licitacoes_normalizadas.append(normalizar_licitacao(licitacao))
         except RegistroPNCPInvalidoError as erro:
-            raise requests.exceptions.RequestException(
+            falha = requests.exceptions.RequestException(
                 f"PNCP retornou registro inválido na posição {indice}: {erro}"
-            ) from erro
+            )
+            falha.registros_recebidos = len(todas_licitacoes)
+            falha.registros_com_erro = 1
+            raise falha from erro
 
     return licitacoes_normalizadas

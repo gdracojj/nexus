@@ -23,7 +23,7 @@ O projeto tem dois objetivos de produto, em estágios diferentes:
 
 ## 🎯 Status Atual do Projeto
 
-O projeto oferece uma API FastAPI e um painel frontend inicial. A aplicação consulta diretamente o endpoint de contratações do PNCP, percorre as páginas informadas pela API, normaliza os registros e filtra por UF e termo do objeto. Não há persistência conectada ao fluxo da aplicação: os dados são obtidos novamente a cada consulta.
+O projeto oferece uma API FastAPI e um painel frontend inicial. A aplicação consulta o endpoint de contratações do PNCP, percorre as páginas informadas pela API, normaliza os registros, grava ou atualiza os dados no PostgreSQL e filtra por UF e termo do objeto.
 
 ---
 
@@ -34,23 +34,22 @@ O projeto oferece uma API FastAPI e um painel frontend inicial. A aplicação co
 * **Integração HTTP:** Requests para consultar o PNCP.
 * **Frontend:** HTML, CSS e JavaScript sem framework.
 * **Comunicação:** API HTTP com payloads JSON.
+* **Persistência:** PostgreSQL com SQLAlchemy e Alembic; contratações são deduplicadas pelo `numeroControlePNCP` do PNCP.
 
-As dependências de execução estão declaradas em `requirements.txt`. O arquivo também inclui `psycopg2-binary`, mas a aplicação ainda não usa PostgreSQL para persistir dados.
+As dependências de execução estão declaradas em `requirements.txt`. A URL do banco é lida de `DATABASE_URL` (ou `POSTGRES_URL`). O schema é aplicado por migrations Alembic; a aplicação não cria tabelas automaticamente.
 
 ### Planejadas para as Próximas Fases
-* **Banco de Dados Relacional:** PostgreSQL
-* **Modelagem e Persistência:** SQLAlchemy / SQLModel, Alembic (migrações)
 * **Engenharia de Dados:** Pipelines ETL/ELT, atualização incremental
 * **Infraestrutura e Conteinerização:** Docker, Docker Compose
-* **Testes e Qualidade:** Pytest, cobertura de testes automatizados
+* **Testes e Qualidade:** Pytest com testes unitários e de integração PostgreSQL
 * **Analytics & IA:** Integração com Power BI / BI Tools e recursos de Processamento de Linguagem Natural (NLP) para análise de editais
 
 ---
 
 ## 🏗️ Arquitetura do Sistema
 
-### 1. Arquitetura Atual (Consulta Síncrona)
-Atualmente, as pesquisas feitas na interface consultam diretamente a API do PNCP em tempo de execução, realizando a paginação e normalização dos dados antes de retornar ao usuário.
+### 1. Arquitetura Atual (Consulta Síncrona com Persistência)
+As pesquisas consultam o PNCP em tempo de execução, normalizam os registros, fazem upsert no PostgreSQL e retornam os registros filtrados.
 
 ```
 [ Usuário / Frontend ]
@@ -63,10 +62,12 @@ Atualmente, as pesquisas feitas na interface consultam diretamente a API do PNCP
          │                        │
          ▼                        ▼
 [ Filtro por UF/Produto ] ◀── [ Parser / Normalização ]
+         │
+         └──▶ [ Repository ] ──▶ [ PostgreSQL ]
 ```
 
-### 2. Arquitetura planejada (ingestão e persistência)
-Uma evolução possível é desacoplar a consulta do usuário da API externa e armazenar os dados em uma base persistente. Esse fluxo ainda não está implementado:
+### 2. Próxima evolução (ingestão desacoplada)
+Uma evolução possível é desacoplar a consulta do usuário das chamadas externas por meio de uma rotina de coleta recorrente:
 
 ```
 [ API PNCP ] ──▶ [ Ingestão / ETL ] ──▶ [ Parser ] ──▶ [ PostgreSQL ]
@@ -92,7 +93,7 @@ O comportamento implementado em `app/pncp/client.py` é:
 * **`Retry-After`:** aceita segundos inteiros (delta-seconds) ou uma data HTTP. Valores ausentes ou inválidos usam espera exponencial (`2`, `4`, `8` e `16` segundos nas tentativas que ainda podem ser repetidas). Datas passadas resultam em espera zero. Esperas solicitadas acima de 60 segundos causam falha imediata.
 * **Outras falhas:** timeouts, erros de conexão e status HTTP diferentes de 429 não são repetidos pelo cliente.
 
-> A consulta é síncrona e depende da disponibilidade e do tempo de resposta do PNCP. Persistência local e coleta desacoplada permanecem no roadmap.
+> A consulta e ingestão são síncronas e dependem da disponibilidade e do tempo de resposta do PNCP. A persistência mantém os registros coletados; coleta recorrente desacoplada permanece no roadmap.
 
 ---
 
@@ -102,17 +103,17 @@ O comportamento implementado em `app/pncp/client.py` é:
 nexus/
 ├── app/
 │   ├── core/
-│   │   ├── config.py          # vazio; reservado
+│   │   ├── config.py          # configuração por ambiente
 │   │   └── logger.py          # vazio; reservado
 │   ├── database/
-│   │   ├── __init__.py        # vazio
-│   │   ├── connection.py      # vazio; sem conexão ativa ao PostgreSQL
-│   │   └── models.py          # vazio; sem modelos persistentes
+│   │   ├── __init__.py
+│   │   ├── connection.py      # engine e sessões SQLAlchemy
+│   │   └── models.py          # licitações, payloads e execuções PNCP
 │   ├── pncp/
 │   │   ├── client.py         # Cliente HTTP, paginação e políticas de retry/backoff
 │   │   └── parser.py         # Normalização do payload JSON do PNCP
 │   ├── repositories/
-│   │   └── licitacao_repository.py  # vazio; repositório não implementado
+│   │   └── licitacao_repository.py  # upsert e consultas persistidas
 │   ├── services/
 │   │   └── licitacao_service.py  # Regras de negócio e filtragem
 │   └── main.py               # Aplicação FastAPI, rota REST e montagem do frontend
@@ -126,13 +127,17 @@ nexus/
 │       ├── favicon.png
 │       ├── nexus-mark.png
 │       └── nexus-wordmark.png
+├── alembic/
+│   ├── env.py
+│   └── versions/
+│       └── 0001_initial_persistence.py
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt
 └── README.md                 # Documentação do projeto
 ```
 
-Não há diretório de testes versionado neste momento. Os módulos `app/core`, `app/database` e `app/repositories` listados como vazios ainda não participam do fluxo executado.
+Os testes incluem parser/cliente e integração PostgreSQL. Para a integração é obrigatório apontar `NEXUS_TEST_DATABASE_URL` para uma base descartável; cada execução cria e remove um schema isolado.
 
 ---
 
@@ -140,6 +145,7 @@ Não há diretório de testes versionado neste momento. Os módulos `app/core`, 
 
 ### Pré-requisitos
 * **Python 3.10+** instalado
+* **PostgreSQL** acessível, com um banco criado para o NEXUS
 * Ambientes baseados em **Linux/macOS** ou **Windows (WSL2/PowerShell)**
 * Git
 
@@ -163,16 +169,39 @@ Não há diretório de testes versionado neste momento. Os módulos `app/core`, 
    pip install -r requirements.txt
    ```
 
-4. **Iniciar o servidor Backend (FastAPI + Uvicorn):**
+4. **Configurar o banco:**
+   ```bash
+   cp .env.example .env
+   ```
+   Ajuste `DATABASE_URL` no `.env` para as credenciais do PostgreSQL e para o banco `main` (ou o nome escolhido). Exemplo:
+   `postgresql+psycopg2://usuario:senha@localhost:5432/main`
+
+5. **Aplicar o schema versionado:**
+   ```bash
+   python -m alembic upgrade head
+   python -m alembic current
+   ```
+
+6. **Iniciar o servidor Backend (FastAPI + Uvicorn):**
    ```bash
    python -m uvicorn app.main:app --reload
    ```
 
-5. **Acessar a aplicação:**
+7. **Acessar a aplicação:**
    * **Interface Web (Frontend):** [http://127.0.0.1:8000](http://127.0.0.1:8000)
    * **Documentação Interativa (Swagger UI):** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
-O comando de inicialização pressupõe que as dependências foram instaladas no ambiente virtual. Não há uma suíte de testes automatizados configurada no repositório; portanto, ainda não existe um comando de testes validado para documentar.
+Para executar os testes unitários use `python -m pytest -q`. Os testes de integração PostgreSQL são habilitados com `NEXUS_TEST_DATABASE_URL` apontando para um banco de testes descartável; eles criam e removem um schema `nexus_test_*` dentro dessa base.
+
+### Persistência PNCP
+
+`licitacoes.numero_controle_pncp` usa o `numeroControlePNCP` do PNCP como chave externa única. A tabela `pncp_payloads` mantém um único snapshot JSONB por contratação: o SHA-256 evita regravar cópias idênticas e o snapshot é substituído quando o conteúdo muda. O histórico das execuções fica em `sync_execucoes`; cada lote de upserts e a conclusão da execução são confirmados na mesma transação. Falhas de ingestão são registradas em transação separada, quando o banco continua acessível.
+
+O mapeamento usa o resumo do endpoint de propostas abertas e os campos documentados pelo [Swagger da API de Consulta do PNCP](https://pncp.gov.br/api/consulta/swagger-ui/index.html) e pelo [manual oficial de integração](https://pncp.gov.br/manual/pt-br/latest/singlehtml/index.html). Datas sem fuso explícito são interpretadas no horário de Brasília; valores monetários são persistidos como `NUMERIC(20,4)`.
+
+O endpoint atual consulta contratações com propostas abertas e não consulta itens. Por isso a primeira versão não cria `licitacao_itens`. Atas de Registro de Preços são entidades distintas: sua futura modelagem deve confirmar os identificadores de contratação/ata publicados pelo PNCP e preservar movimentações de saldo em histórico próprio.
+
+PostgreSQL local não oferece branches do conteúdo do banco. Para isolar cada alteração de schema, crie uma branch Git `db/<alteracao>` e uma migration Alembic própria; migrations são a trilha reproduzível de mudanças entre local e Docker. A branch Git não é uma cópia isolada dos dados.
 
 ---
 
@@ -236,10 +265,12 @@ O desenvolvimento do NEXUS é estruturado de forma iterativa e incremental:
   - [x] Normalização de payload em DTOs internos (`parser.py`).
   - [x] Tentativas limitadas e espera exponencial para respostas HTTP 429.
   - [x] Endpoint FastAPI e Painel Frontend com estilização operacional.
-- [ ] **Fase 2 — Implementação do PostgreSQL & Modelagem de Dados** *(Prioridade Atual)*
-  - [ ] Mapeamento rigoroso do schema do JSON completo da API do PNCP.
-  - [ ] Modelagem relacional e definição de chaves únicas de negócio para evitar duplicidades.
-  - [ ] Implementação da camada de persistência com suporte a operação *Upsert*.
+- [x] **Fase 2 — Implementação da persistência e migration inicial**
+  - [x] Campos normalizados do endpoint PNCP, com payload original JSONB.
+  - [x] Upsert idempotente pelo identificador estável `numeroControlePNCP`.
+  - [x] Registro de cada execução e seu resultado.
+  - [x] Migration versionada com Alembic.
+  - [ ] Expansão do schema conforme novos endpoints e necessidades confirmadas.
 - [ ] **Fase 3 — Engenharia de Dados & Ingestão Assíncrona**
   - [ ] Desacoplamento da busca do usuário em relação às chamadas externas.
   - [ ] Criação de rotinas de coleta recorrente e atualização incremental da base.
