@@ -1,6 +1,7 @@
 import pytest
 import requests
 from fastapi import HTTPException
+from sqlalchemy.exc import OperationalError
 
 from app import main
 from app.pncp import client
@@ -62,6 +63,8 @@ def test_registro_malformado_rejeita_lote_com_indice_sem_expor_payload(
 
     assert "posição 2" in str(erro.value)
     assert "numeroCompra" in str(erro.value)
+    assert erro.value.registros_recebidos == 2
+    assert erro.value.registros_com_erro == 1
     assert "DADO INTERNO DE TESTE" not in str(erro.value)
 
 
@@ -69,6 +72,10 @@ def test_registro_malformado_vira_502_com_mensagem_publica_generica(
     monkeypatch,
     capsys,
 ):
+    from app.repositories import licitacao_repository
+
+    monkeypatch.setattr(licitacao_repository, "iniciar_execucao", lambda _parametros: 1)
+    monkeypatch.setattr(licitacao_repository, "falhar_execucao", lambda *_args: None)
     monkeypatch.setattr(
         client,
         "buscar_pagina",
@@ -92,3 +99,16 @@ def test_registro_malformado_vira_502_com_mensagem_publica_generica(
     assert "registro inválido na posição 1" in diagnostico
     assert "objetoCompra" in diagnostico
     assert "DADO INTERNO DE TESTE" not in diagnostico
+
+
+def test_falha_de_conexao_ou_persistencia_retorna_500_generico(monkeypatch):
+    def falha_banco(*_args, **_kwargs):
+        raise OperationalError("SELECT", {}, RuntimeError("conexão indisponível"))
+
+    monkeypatch.setattr(main, "buscar_e_filtrar_licitacoes", falha_banco)
+
+    with pytest.raises(HTTPException) as erro:
+        main.listar_licitacoes("RJ")
+
+    assert erro.value.status_code == 500
+    assert erro.value.detail == "Erro interno ao processar a consulta."

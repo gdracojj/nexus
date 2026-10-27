@@ -294,12 +294,12 @@ def test_buscar_licitacoes_interrompe_paginacao_ao_exceder_prazo(monkeypatch):
 
 
 def test_prazo_total_excedido_na_rota_retorna_502_generico(monkeypatch):
-    def buscar_pagina_fake(*_args, **_kwargs):
+    def falhar_busca(*_args, **_kwargs):
         raise client.PrazoTotalConsultaPNPCError(
             "detalhe técnico interno"
         )
 
-    monkeypatch.setattr(client, "buscar_pagina", buscar_pagina_fake)
+    monkeypatch.setattr(main, "buscar_e_filtrar_licitacoes", falhar_busca)
 
     with pytest.raises(HTTPException) as erro:
         main.listar_licitacoes("RJ")

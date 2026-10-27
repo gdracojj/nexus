@@ -69,7 +69,34 @@ def test_buscar_licitacoes_revalida_limite_em_cada_pagina(monkeypatch):
     assert chamadas == [1, 2]
 
 
+def test_buscar_licitacoes_reporta_recebidos_antes_de_falha_de_pagina(monkeypatch):
+    recebidos = []
+    paginas = []
+
+    def buscar_pagina_fake(_url, parametros, **_kwargs):
+        if parametros["pagina"] == 1:
+            return {"data": [{"numeroCompra": "1"}], "totalPaginas": 2}
+        raise requests.exceptions.Timeout("timeout")
+
+    monkeypatch.setattr(client, "buscar_pagina", buscar_pagina_fake)
+    monkeypatch.setattr(client.time, "sleep", lambda _segundos: None)
+
+    with pytest.raises(requests.exceptions.Timeout):
+        client.buscar_licitacoes(
+            "RJ",
+            ao_receber_registros=recebidos.append,
+            ao_consultar_pagina=lambda pagina, _quantidade: paginas.append(pagina),
+        )
+
+    assert recebidos == [1]
+    assert paginas == [1]
+
+
 def test_limite_de_paginacao_retorna_502_generico_na_rota(monkeypatch):
+    from app.repositories import licitacao_repository
+
+    monkeypatch.setattr(licitacao_repository, "iniciar_execucao", lambda _parametros: 1)
+    monkeypatch.setattr(licitacao_repository, "falhar_execucao", lambda *_args: None)
     monkeypatch.setattr(
         client,
         "buscar_pagina",
