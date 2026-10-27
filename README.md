@@ -77,23 +77,24 @@ Uma evolução possível é desacoplar a consulta do usuário das chamadas exter
 
 ---
 
-## ⚡ Integração PNCP, Paginação e Resiliência (HTTP 429)
+## ⚡ Integração PNCP, Paginação e Resiliência HTTP
 
 ### Endpoint de Consulta Integrado
 A aplicação consome o seguinte endpoint oficial do PNCP:
 `https://pncp.gov.br/api/consulta/v1/contratacoes/proposta`
 
 ### Paginação e limite de taxa
-O cliente percorre as páginas usando o campo `totalPaginas` retornado pelo PNCP e agrega os registros antes de normalizá-los. Não há um limite máximo de páginas configurado localmente. Respostas HTTP 429 são tratadas com novas tentativas; os demais erros HTTP e falhas de conexão são propagados para a API do NEXUS.
+O cliente percorre as páginas usando o campo `totalPaginas` retornado pelo PNCP e agrega os registros antes de normalizá-los. Cada consulta aceita no máximo 100 páginas. O prazo de 120 segundos é compartilhado entre todas as páginas, tentativas, esperas e normalização dos registros.
 
 ### Camada Inicial de Resiliência Implementada
 O comportamento implementado em `app/pncp/client.py` é:
 * **Intervalo entre páginas:** pausa de 1 segundo entre páginas sucessivas.
-* **Tentativas para HTTP 429:** até 5 tentativas no total, incluindo a primeira requisição. Portanto, após a resposta inicial, podem ocorrer até 4 novas tentativas.
-* **`Retry-After`:** aceita segundos inteiros (delta-seconds) ou uma data HTTP. Valores ausentes ou inválidos usam espera exponencial (`2`, `4`, `8` e `16` segundos nas tentativas que ainda podem ser repetidas). Datas passadas resultam em espera zero. Esperas solicitadas acima de 60 segundos causam falha imediata.
-* **Outras falhas:** timeouts, erros de conexão e status HTTP diferentes de 429 não são repetidos pelo cliente.
+* **Tentativas:** até 5 por página, contando a requisição inicial, para timeouts, erros de conexão e status HTTP `408`, `429`, `500`, `502`, `503` ou `504`.
+* **Backoff:** espera exponencial de `2`, `4`, `8` e `16` segundos quando não há um `Retry-After` válido.
+* **`Retry-After`:** aceita segundos inteiros ou uma data HTTP. Datas passadas resultam em espera zero. Esperas solicitadas acima de 60 segundos causam falha imediata.
+* **Falhas permanentes:** outros status HTTP e erros TLS não são repetidos. Se o prazo total acabar antes de uma nova tentativa, a consulta termina e a API responde com erro genérico `502`.
 
-> A consulta e ingestão são síncronas e dependem da disponibilidade e do tempo de resposta do PNCP. A persistência mantém os registros coletados; coleta recorrente desacoplada permanece no roadmap.
+> A consulta e ingestão são síncronas e dependem da disponibilidade e do tempo de resposta do PNCP. Requests limita a inatividade da conexão, não o tempo absoluto de download da resposta; por isso, uma resposta que envie dados continuamente pode ultrapassar o prazo de 120 segundos. A persistência mantém os registros coletados; coleta recorrente desacoplada permanece no roadmap.
 
 ---
 
@@ -263,7 +264,7 @@ O desenvolvimento do NEXUS é estruturado de forma iterativa e incremental:
 - [x] **Fase 1 — Consolidação da Coleta e API REST**
   - [x] Integração funcional com a API do PNCP.
   - [x] Normalização de payload em DTOs internos (`parser.py`).
-  - [x] Tentativas limitadas e espera exponencial para respostas HTTP 429.
+  - [x] Tentativas limitadas e espera exponencial para falhas transitórias do PNCP.
   - [x] Endpoint FastAPI e Painel Frontend com estilização operacional.
 - [x] **Fase 2 — Implementação da persistência e migration inicial**
   - [x] Campos normalizados do endpoint PNCP, com payload original JSONB.

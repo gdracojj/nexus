@@ -23,25 +23,40 @@ def banco_postgres(monkeypatch):
 
     schema = f"nexus_test_{uuid.uuid4().hex}"
     admin = create_engine(url)
-    with admin.begin() as conexao:
-        conexao.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine = None
+    schema_criado = False
+    try:
+        with admin.begin() as conexao:
+            conexao.execute(text(f'CREATE SCHEMA "{schema}"'))
+        schema_criado = True
 
-    scoped_url = make_url(url).update_query_dict({"options": f"-csearch_path={schema}"})
-    monkeypatch.setenv("DATABASE_URL", str(scoped_url))
-    engine = create_engine(scoped_url)
-    alembic_config = Config("alembic.ini")
-    command.upgrade(alembic_config, "head")
-    command.check(alembic_config)
-    monkeypatch.setattr(
-        repositorio,
-        "obter_session_factory",
-        lambda: sessionmaker(bind=engine, expire_on_commit=False),
-    )
-    yield engine
-    engine.dispose()
-    with admin.begin() as conexao:
-        conexao.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
-    admin.dispose()
+        scoped_url = make_url(url).update_query_dict(
+            {"options": f"-csearch_path={schema}"}
+        )
+        monkeypatch.setenv("DATABASE_URL", str(scoped_url))
+        engine = create_engine(scoped_url)
+        alembic_config = Config("alembic.ini")
+        command.upgrade(alembic_config, "head")
+        command.check(alembic_config)
+        monkeypatch.setattr(
+            repositorio,
+            "obter_session_factory",
+            lambda: sessionmaker(bind=engine, expire_on_commit=False),
+        )
+        yield engine
+    finally:
+        try:
+            if engine is not None:
+                engine.dispose()
+        finally:
+            try:
+                if schema_criado:
+                    with admin.begin() as conexao:
+                        conexao.execute(
+                            text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+                        )
+            finally:
+                admin.dispose()
 
 
 def registro(payload_objeto="Compra de material"):
