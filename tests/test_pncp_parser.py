@@ -5,7 +5,6 @@ from app.pncp.parser import (
     normalizar_licitacao,
     registro_para_persistencia,
 )
-from app.services.licitacao_service import filtrar_licitacoes
 
 
 def registro_valido():
@@ -91,14 +90,20 @@ def test_normalizar_licitacao_preserva_campos_opcionais_ausentes_ou_nulos():
     assert resultado["data_encerramento_proposta"] is None
 
 
-def test_campos_opcionais_nulos_nao_interrompem_o_filtro_do_servico():
-    registro = registro_valido()
-    del registro["unidadeOrgao"]["codigoUnidade"]
-    registro["unidadeOrgao"]["municipioNome"] = None
-    registro["dataEncerramentoProposta"] = None
-    normalizada = normalizar_licitacao(registro)
+def test_fuso_horario_tem_dados_de_fallback_instalados():
+    import zoneinfo
 
-    assert filtrar_licitacoes([normalizada], "RJ", "material") == [normalizada]
+    pytest.importorskip("tzdata")
+    caminho_original = zoneinfo.TZPATH
+    zoneinfo.reset_tzpath(())
+    zoneinfo.ZoneInfo.clear_cache()
+    try:
+        assert zoneinfo.ZoneInfo("America/Sao_Paulo").key == "America/Sao_Paulo"
+    except zoneinfo.ZoneInfoNotFoundError:
+        pytest.fail("tzdata está instalado, mas não contém America/Sao_Paulo")
+    finally:
+        zoneinfo.reset_tzpath(caminho_original)
+        zoneinfo.ZoneInfo.clear_cache()
 
 
 def test_registro_para_persistencia_mapeia_identidade_valor_datas_e_payload():

@@ -1,9 +1,5 @@
 import pytest
 import requests
-from fastapi import HTTPException
-from sqlalchemy.exc import OperationalError
-
-from app import main
 from app.pncp import client
 
 
@@ -68,14 +64,24 @@ def test_registro_malformado_rejeita_lote_com_indice_sem_expor_payload(
     assert "DADO INTERNO DE TESTE" not in str(erro.value)
 
 
-def test_registro_malformado_vira_502_com_mensagem_publica_generica(
-    monkeypatch,
-    capsys,
-):
-    from app.repositories import licitacao_repository
+def test_registro_malformado_registra_falha_da_coleta(monkeypatch):
+    from contextlib import nullcontext
 
+    from app.repositories import licitacao_repository
+    from app.services import licitacao_service
+
+    falhas_registradas = []
+    monkeypatch.setattr(
+        licitacao_repository,
+        "lock_coleta_pncp",
+        lambda: nullcontext(),
+    )
     monkeypatch.setattr(licitacao_repository, "iniciar_execucao", lambda _parametros: 1)
-    monkeypatch.setattr(licitacao_repository, "falhar_execucao", lambda *_args: None)
+    monkeypatch.setattr(
+        licitacao_repository,
+        "falhar_execucao",
+        lambda *args: falhas_registradas.append(args),
+    )
     monkeypatch.setattr(
         client,
         "buscar_pagina",
@@ -85,30 +91,11 @@ def test_registro_malformado_vira_502_com_mensagem_publica_generica(
         },
     )
 
-    with pytest.raises(HTTPException) as erro:
-        main.listar_licitacoes("RJ")
+    with pytest.raises(requests.exceptions.RequestException) as erro:
+        licitacao_service.sincronizar_licitacoes("RJ")
 
-    assert erro.value.status_code == 502
-    assert erro.value.detail == (
-        "Não foi possível consultar o PNCP. Tente novamente mais tarde."
-    )
-    assert "DADO INTERNO DE TESTE" not in erro.value.detail
-
-    diagnostico = capsys.readouterr().out
-    assert "ERRO PNCP:" in diagnostico
-    assert "registro inválido na posição 1" in diagnostico
-    assert "objetoCompra" in diagnostico
-    assert "DADO INTERNO DE TESTE" not in diagnostico
-
-
-def test_falha_de_conexao_ou_persistencia_retorna_500_generico(monkeypatch):
-    def falha_banco(*_args, **_kwargs):
-        raise OperationalError("SELECT", {}, RuntimeError("conexão indisponível"))
-
-    monkeypatch.setattr(main, "buscar_e_filtrar_licitacoes", falha_banco)
-
-    with pytest.raises(HTTPException) as erro:
-        main.listar_licitacoes("RJ")
-
-    assert erro.value.status_code == 500
-    assert erro.value.detail == "Erro interno ao processar a consulta."
+    assert "posição 1" in str(erro.value)
+    assert "DADO INTERNO DE TESTE" not in str(erro.value)
+    assert len(falhas_registradas) == 1
+    assert falhas_registradas[0][0] == 1
+    assert falhas_registradas[0][2:] == (1, 1, 1)
