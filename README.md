@@ -12,18 +12,18 @@ Além de sua aplicação prática no mercado, o NEXUS é um projeto de portfóli
 
 ## 📌 Visão Geral e Problema de Negócio
 
-A identificação de oportunidades no mercado público pode exigir pesquisas frequentes no PNCP. Hoje, o NEXUS consulta o portal em tempo de execução e apresenta os resultados filtrados. O controle de Atas de Registro de Preços, saldos, vigências e reajustes é um objetivo futuro do produto; não está implementado nesta versão.
+A identificação de oportunidades no mercado público pode exigir pesquisas frequentes no PNCP. O NEXUS coleta oportunidades por um comando operacional separado, persiste os resultados e permite consultá-los pela API. O controle de Atas de Registro de Preços, saldos, vigências e reajustes é um objetivo futuro do produto; não está implementado nesta versão.
 
 O projeto tem dois objetivos de produto, em estágios diferentes:
 
-1. **Disponível:** consulta de contratações no PNCP, normalização dos registros e filtragem local por UF e termo textual no objeto.
+1. **Disponível:** coleta explícita de contratações no PNCP, normalização, persistência e consulta por UF e termo textual no objeto.
 2. **Planejado:** gestão pós-contratação de Atas de Registro de Preços, incluindo saldos e vigências.
 
 ---
 
 ## 🎯 Status Atual do Projeto
 
-O projeto oferece uma API FastAPI e um painel frontend inicial. A aplicação consulta o endpoint de contratações do PNCP, percorre as páginas informadas pela API, normaliza os registros, grava ou atualiza os dados no PostgreSQL e filtra por UF e termo do objeto.
+O projeto oferece uma API FastAPI e um painel frontend inicial. O comando de coleta consulta o PNCP, percorre as páginas informadas pela API, normaliza os registros e grava ou atualiza os dados no PostgreSQL. A API e o frontend consultam os dados persistidos e filtram por UF e termo do objeto.
 
 ---
 
@@ -41,39 +41,31 @@ As dependências de execução estão declaradas em `requirements.txt`. A URL do
 ### Planejadas para as Próximas Fases
 * **Engenharia de Dados:** Pipelines ETL/ELT, atualização incremental
 * **Infraestrutura e Conteinerização:** Docker, Docker Compose
-* **Testes e Qualidade:** Pytest com testes unitários e de integração PostgreSQL
+* **Testes e Qualidade:** expansão da cobertura e execução da integração PostgreSQL em ambiente de teste
 * **Analytics & IA:** Integração com Power BI / BI Tools e recursos de Processamento de Linguagem Natural (NLP) para análise de editais
 
 ---
 
 ## 🏗️ Arquitetura do Sistema
 
-### 1. Arquitetura Atual (Consulta Síncrona com Persistência)
-As pesquisas consultam o PNCP em tempo de execução, normalizam os registros, fazem upsert no PostgreSQL e retornam os registros filtrados.
+### 1. Arquitetura Atual (Leitura Persistida e Coleta Explícita)
+O endpoint de leitura consulta somente os registros já persistidos no PostgreSQL. A coleta do PNCP é iniciada separadamente pelo comando `python -m app.cli coletar --uf RJ`; esse comando pode ser executado manualmente ou agendado pelo scheduler do sistema operacional.
 
 ```
-[ Usuário / Frontend ]
-         │
-         ▼
-[ FastAPI (app/main.py) ]
-         │
-         ▼
-[ LicitacaoService ] ──▶ [ PNCP Client ] ──(HTTP)──▶ [ API do PNCP ]
-         │                        │
-         ▼                        ▼
-[ Filtro por UF/Produto ] ◀── [ Parser / Normalização ]
-         │
-         └──▶ [ Repository ] ──▶ [ PostgreSQL ]
+[ Usuário / Frontend ] ──▶ [ FastAPI ] ──▶ [ Repository ] ──▶ [ PostgreSQL ]
+                                            ▲
+[ Scheduler / Operador ] ──▶ [ CLI ] ──▶ [ Serviço de Coleta ]
+                                             │
+                                             ▼
+                         [ PNCP Client ] ──(HTTP)──▶ [ API do PNCP ]
+                               │
+                               ▼
+                     [ Parser / Normalização ] ──▶ [ Repository ]
 ```
 
-### 2. Próxima evolução (ingestão desacoplada)
-Uma evolução possível é desacoplar a consulta do usuário das chamadas externas por meio de uma rotina de coleta recorrente:
+O PostgreSQL mantém um advisory lock global de sessão durante a coleta, permitindo apenas uma coleta simultânea entre processos e workers conectados ao mesmo banco. Se outra coleta já estiver ativa, o comando termina com erro em vez de iniciar trabalho duplicado. Cada processo limita o pool SQLAlchemy a 5 conexões persistentes, 10 conexões excedentes e 30 segundos para aguardar uma conexão; cada worker de aplicação mantém seu próprio pool. Não há scheduler interno: a periodicidade é definida pelo operador no cron, Task Scheduler ou ferramenta equivalente.
 
-```
-[ API PNCP ] ──▶ [ Ingestão / ETL ] ──▶ [ Parser ] ──▶ [ PostgreSQL ]
-                                                            │
-[ Usuário / Frontend ] ◀── [ FastAPI ] ◀── [ Repositorio ] ─┘
-```
+A CLI reutiliza a contagem da coleta concluída mais recente quando endpoint e parâmetros são idênticos e a execução terminou nos últimos 900 segundos. A janela pode ser alterada por `PNCP_SYNC_CACHE_TTL_SECONDS` entre 0 e 86400; `0` desativa o reuso. Uma execução falha ou ainda em andamento mais recente invalida o resultado anterior. O lock global ainda limita toda coleta a uma por vez, inclusive para UFs diferentes, como limite conservador de concorrência com o PNCP.
 
 ---
 
@@ -92,9 +84,9 @@ O comportamento implementado em `app/pncp/client.py` é:
 * **Tentativas:** até 5 por página, contando a requisição inicial, para timeouts, erros de conexão e status HTTP `408`, `429`, `500`, `502`, `503` ou `504`.
 * **Backoff:** espera exponencial de `2`, `4`, `8` e `16` segundos quando não há um `Retry-After` válido.
 * **`Retry-After`:** aceita segundos inteiros ou uma data HTTP. Datas passadas resultam em espera zero. Esperas solicitadas acima de 60 segundos causam falha imediata.
-* **Falhas permanentes:** outros status HTTP e erros TLS não são repetidos. Se o prazo total acabar antes de uma nova tentativa, a consulta termina e a API responde com erro genérico `502`.
+* **Falhas permanentes:** outros status HTTP e erros TLS não são repetidos. Se o prazo total acabar antes de uma nova tentativa, a coleta falha e o comando termina com código diferente de zero.
 
-> A consulta e ingestão são síncronas e dependem da disponibilidade e do tempo de resposta do PNCP. Requests limita a inatividade da conexão, não o tempo absoluto de download da resposta; por isso, uma resposta que envie dados continuamente pode ultrapassar o prazo de 120 segundos. A persistência mantém os registros coletados; coleta recorrente desacoplada permanece no roadmap.
+> A coleta é síncrona no processo CLI e depende da disponibilidade e do tempo de resposta do PNCP. Requests limita a inatividade da conexão, não o tempo absoluto de download da resposta; por isso, uma resposta que envie dados continuamente pode ultrapassar o prazo de 120 segundos. A rota de leitura não depende do PNCP e continua consultando os registros já persistidos durante uma indisponibilidade externa.
 
 ---
 
@@ -106,6 +98,7 @@ nexus/
 │   ├── core/
 │   │   ├── config.py          # configuração por ambiente
 │   │   └── logger.py          # vazio; reservado
+│   ├── cli.py                 # comando explícito de coleta PNCP
 │   ├── database/
 │   │   ├── __init__.py
 │   │   ├── connection.py      # engine e sessões SQLAlchemy
@@ -116,8 +109,16 @@ nexus/
 │   ├── repositories/
 │   │   └── licitacao_repository.py  # upsert e consultas persistidas
 │   ├── services/
-│   │   └── licitacao_service.py  # Regras de negócio e filtragem
+│   │   └── licitacao_service.py  # consulta persistida e serviço de coleta
 │   └── main.py               # Aplicação FastAPI, rota REST e montagem do frontend
+├── tests/
+│   ├── test_api_route.py
+│   ├── test_cli.py
+│   ├── test_persistence_postgresql.py
+│   ├── test_pncp_pagination.py
+│   ├── test_pncp_parser.py
+│   ├── test_pncp_record_validation.py
+│   └── test_pncp_transient_retries.py
 ├── frontend/
 │   ├── app.js
 │   ├── assets.js
@@ -135,10 +136,11 @@ nexus/
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt
+├── requirements-test.txt
 └── README.md                 # Documentação do projeto
 ```
 
-Os testes incluem parser/cliente e integração PostgreSQL. Para a integração é obrigatório apontar `NEXUS_TEST_DATABASE_URL` para uma base descartável; cada execução cria e remove um schema isolado.
+`requirements.txt` contém as dependências da aplicação; `requirements-test.txt` inclui essas dependências mais `pytest` e `httpx2` para os testes HTTP com FastAPI `TestClient`. Para executar integração PostgreSQL, aponte `NEXUS_TEST_DATABASE_URL` para uma base descartável; cada execução cria e remove um schema isolado.
 
 ---
 
@@ -167,8 +169,9 @@ Os testes incluem parser/cliente e integração PostgreSQL. Para a integração 
 
 3. **Instalar as dependências:**
    ```bash
-   pip install -r requirements.txt
+   pip install -r requirements-test.txt
    ```
+   Para instalar apenas o necessário à aplicação, use `pip install -r requirements.txt`.
 
 4. **Configurar o banco:**
    ```bash
@@ -188,15 +191,21 @@ Os testes incluem parser/cliente e integração PostgreSQL. Para a integração 
    python -m uvicorn app.main:app --reload
    ```
 
-7. **Acessar a aplicação:**
+7. **Executar uma coleta inicial (em outro terminal):**
+   ```bash
+   python -m app.cli coletar --uf RJ
+   ```
+   O mesmo comando pode ser agendado no cron, Windows Task Scheduler ou ferramenta operacional equivalente. Enquanto uma coleta estiver ativa, outra execução é recusada pelo lock PostgreSQL.
+
+8. **Acessar a aplicação:**
    * **Interface Web (Frontend):** [http://127.0.0.1:8000](http://127.0.0.1:8000)
    * **Documentação Interativa (Swagger UI):** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
-Para executar os testes unitários use `python -m pytest -q`. Os testes de integração PostgreSQL são habilitados com `NEXUS_TEST_DATABASE_URL` apontando para um banco de testes descartável; eles criam e removem um schema `nexus_test_*` dentro dessa base.
+Para executar os testes use `python -m pytest -q`. Os testes de integração PostgreSQL são habilitados com `NEXUS_TEST_DATABASE_URL` apontando para um banco de testes descartável; eles criam e removem um schema `nexus_test_*` dentro dessa base.
 
 ### Persistência PNCP
 
-`licitacoes.numero_controle_pncp` usa o `numeroControlePNCP` do PNCP como chave externa única. A tabela `pncp_payloads` mantém um único snapshot JSONB por contratação: o SHA-256 evita regravar cópias idênticas e o snapshot é substituído quando o conteúdo muda. O histórico das execuções fica em `sync_execucoes`; cada lote de upserts e a conclusão da execução são confirmados na mesma transação. Falhas de ingestão são registradas em transação separada, quando o banco continua acessível.
+`licitacoes.numero_controle_pncp` usa o `numeroControlePNCP` do PNCP como chave externa única. A tabela `pncp_payloads` mantém um único snapshot JSONB por contratação: o SHA-256 evita regravar cópias idênticas e o snapshot é substituído quando o conteúdo muda. `coletada_em` registra a primeira coleta conhecida pelo NEXUS e permanece inalterado em upserts posteriores; `atualizada_em` registra a sincronização mais recente; `data_publicacao` é a data de publicação informada pelo PNCP. A migration inicial já tinha os dois campos de coleta/atualização, portanto essa correção não requer migration nem inventa datas para registros existentes. Para dados anteriores à correção, `coletada_em` pode representar uma sincronização posterior à descoberta original, e esse histórico não pode ser reconstruído com segurança. O histórico das execuções fica em `sync_execucoes`; os upserts de licitações e payloads são enviados em lotes de até 250 chaves, e os lotes e a conclusão da execução são confirmados na mesma transação. Falhas de ingestão são registradas em transação separada, quando o banco continua acessível.
 
 O mapeamento usa o resumo do endpoint de propostas abertas e os campos documentados pelo [Swagger da API de Consulta do PNCP](https://pncp.gov.br/api/consulta/swagger-ui/index.html) e pelo [manual oficial de integração](https://pncp.gov.br/manual/pt-br/latest/singlehtml/index.html). Datas sem fuso explícito são interpretadas no horário de Brasília; valores monetários são persistidos como `NUMERIC(20,4)`.
 
@@ -209,7 +218,7 @@ PostgreSQL local não oferece branches do conteúdo do banco. Para isolar cada a
 ## 📡 Endpoints da API
 
 ### `GET /api/licitacoes`
-Realiza a consulta de oportunidades vigentes no PNCP aplicadas aos filtros locais.
+Consulta oportunidades vigentes já persistidas no PostgreSQL (ou registros sem prazo de encerramento informado). A rota não inicia coleta PNCP; uma lista vazia é uma resposta válida quando ainda não houve coleta ou quando não há oportunidades vigentes para a UF solicitada.
 
 #### Parâmetros da Requisição (Query Params)
 | Parâmetro | Tipo | Obrigatório | Descrição |
@@ -217,7 +226,7 @@ Realiza a consulta de oportunidades vigentes no PNCP aplicadas aos filtros locai
 | `uf` | `string` | **Sim** | Sigla da Unidade Federativa com 2 caracteres (Ex: `RJ`, `SP`). |
 | `produto` | `string` | Não | Termo opcional para busca sem distinção entre maiúsculas e minúsculas na descrição/objeto. O padrão é vazio. |
 
-`uf` é removido de espaços nas extremidades e convertido para maiúsculas. A rota verifica se possui exatamente dois caracteres; não valida se esses caracteres correspondem a uma UF oficial. A consulta do cliente envia ao PNCP a data atual e os sete dias seguintes, a modalidade de contratação `6` e o número da página.
+`uf` é removido de espaços nas extremidades e convertido para maiúsculas. A rota verifica se possui exatamente dois caracteres; não valida se esses caracteres correspondem a uma UF oficial. O termo `produto` é removido de espaços nas extremidades e convertido para minúsculas.
 
 #### Exemplo de Chamada
 ```bash
@@ -244,16 +253,15 @@ curl -X GET "http://127.0.0.1:8000/api/licitacoes?uf=RJ&produto=material"
 }
 ```
 
-`total_consultado` conta os registros normalizados consultados; `total` conta os que passaram pelo filtro de UF e, quando informado, pelo termo em `produto`. A rota também pode responder:
+`total_consultado` conta os registros persistidos com prazo vigente (ou sem prazo informado) para a UF antes do filtro `produto`; `total` conta os registros que correspondem à UF e ao termo informado. A rota também pode responder:
 
 | Status | Situação | Corpo |
 | :--- | :--- | :--- |
 | `400` | `uf` com comprimento diferente de 2 | `{"detail":"Informe a sigla do estado com 2 letras."}` |
 | `422` | Parâmetro obrigatório ausente ou parâmetros que não passam pela validação do FastAPI | Corpo de validação do FastAPI |
-| `502` | Falha de requisição ao PNCP, incluindo timeout, conexão ou erro HTTP | `{"detail":"Não foi possível consultar o PNCP. Tente novamente mais tarde."}` |
-| `500` | Erro interno inesperado | `{"detail":"Erro interno ao processar a consulta."}` |
+| `500` | Falha inesperada ao consultar o PostgreSQL ou erro interno | `{"detail":"Erro interno ao processar a consulta."}` |
 
-As mensagens públicas dos erros `502` e `500` são genéricas; detalhes técnicos são enviados ao diagnóstico do servidor, não ao corpo da resposta.
+Falhas do PNCP ocorrem no comando de coleta, que termina com código diferente de zero; não alteram o status HTTP das consultas aos dados já persistidos. As mensagens públicas de erro `500` são genéricas e não incluem detalhes técnicos.
 
 ---
 
@@ -271,15 +279,16 @@ O desenvolvimento do NEXUS é estruturado de forma iterativa e incremental:
   - [x] Upsert idempotente pelo identificador estável `numeroControlePNCP`.
   - [x] Registro de cada execução e seu resultado.
   - [x] Migration versionada com Alembic.
+  - [x] Leitura da API desacoplada da coleta PNCP, iniciada por CLI com lock PostgreSQL.
   - [ ] Expansão do schema conforme novos endpoints e necessidades confirmadas.
-- [ ] **Fase 3 — Engenharia de Dados & Ingestão Assíncrona**
-  - [ ] Desacoplamento da busca do usuário em relação às chamadas externas.
-  - [ ] Criação de rotinas de coleta recorrente e atualização incremental da base.
+- [ ] **Fase 3 — Engenharia de Dados & Automação de Coleta**
+  - [ ] Agendamento operacional da coleta e atualização incremental da base.
+  - [ ] Ampliação da observabilidade e recuperação de execuções interrompidas.
 - [ ] **Fase 4 — Módulo de Gestão Pós-Contratação**
   - [ ] Cadastro e vinculação de Atas de Registro de Preços.
   - [ ] Controle automatizado de saldo de quantitativos, prazos de vigência e reajustes.
-- [ ] **Fase 5 — Observabilidade, Testes & Conteinerização**
-  - [ ] Testes unitários e de integração com `pytest`.
+- [ ] **Fase 5 — Observabilidade & Conteinerização**
+  - [x] Testes unitários, de integração e do contrato HTTP com `pytest`.
   - [ ] Conteinerização total da solução via `Docker` e `Docker Compose`.
   - [ ] Estruturação de dashboards analíticos e exploração de recursos de IA para leitura de editais.
 
@@ -287,7 +296,7 @@ O desenvolvimento do NEXUS é estruturado de forma iterativa e incremental:
 
 ## ⚠️ Limitações Conhecidas
 
-* **Dependência Síncrona Temporária:** A consulta síncrona atual pode apresentar latência em buscas com volume extenso de páginas no PNCP.
+* **Coleta Síncrona Operacional:** o comando que coleta o PNCP permanece ativo durante paginação, tentativas e persistência, dentro do prazo configurado; a API de leitura não aguarda esse trabalho.
 * **Filtros Textuais Básicos:** A filtragem por palavra-chave é puramente textual (case-insensitive), sem suporte a sinônimos ou busca semântica (planejada para etapas futuras).
 * **Ausência de Módulo Persistente Pós-Compra:** As telas de acompanhamento de atas e saldos encontram-se em fase de especificação e modelagem.
 

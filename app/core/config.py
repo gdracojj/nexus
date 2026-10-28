@@ -22,3 +22,19 @@ def obter_database_url() -> str:
     if url.startswith("postgresql://"):
         return "postgresql+psycopg2://" + url[len("postgresql://"):]
     return url
+
+
+def obter_janela_reuso_coleta_segundos() -> int:
+    """Janela para reutilizar a última coleta concluída com os mesmos parâmetros."""
+    valor = os.getenv("PNCP_SYNC_CACHE_TTL_SECONDS", "900")
+    try:
+        segundos = int(valor)
+    except ValueError as erro:
+        raise RuntimeError(
+            "PNCP_SYNC_CACHE_TTL_SECONDS deve ser um inteiro entre 0 e 86400."
+        ) from erro
+    if segundos < 0 or segundos > 86_400:
+        raise RuntimeError(
+            "PNCP_SYNC_CACHE_TTL_SECONDS deve estar entre 0 e 86400."
+        )
+    return segundos

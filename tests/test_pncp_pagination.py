@@ -1,8 +1,6 @@
 import pytest
 import requests
-from fastapi import HTTPException
 
-from app import main
 from app.pncp import client
 
 
@@ -90,29 +88,6 @@ def test_buscar_licitacoes_reporta_recebidos_antes_de_falha_de_pagina(monkeypatc
 
     assert recebidos == [1]
     assert paginas == [1]
-
-
-def test_limite_de_paginacao_retorna_502_generico_na_rota(monkeypatch):
-    from app.repositories import licitacao_repository
-
-    monkeypatch.setattr(licitacao_repository, "iniciar_execucao", lambda _parametros: 1)
-    monkeypatch.setattr(licitacao_repository, "falhar_execucao", lambda *_args: None)
-    monkeypatch.setattr(
-        client,
-        "buscar_pagina",
-        lambda _url, _parametros, **_kwargs: {
-            "data": [],
-            "totalPaginas": client.MAX_PAGINAS_CONSULTA + 1,
-        },
-    )
-
-    with pytest.raises(HTTPException) as erro:
-        main.listar_licitacoes("RJ")
-
-    assert erro.value.status_code == 502
-    assert erro.value.detail == (
-        "Não foi possível consultar o PNCP. Tente novamente mais tarde."
-    )
 
 
 @pytest.mark.parametrize("total_paginas", [-1, None, "2", True])
