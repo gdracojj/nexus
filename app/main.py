@@ -1,5 +1,4 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.staticfiles import StaticFiles
 import requests
 
 from app.services.licitacao_service import buscar_e_filtrar_licitacoes
@@ -49,13 +48,3 @@ def listar_licitacoes(uf: str, produto: str = ""):
         "total": len(resultados),
         "resultados": resultados,
     }
-
-
-app.mount(
-    "/",
-    StaticFiles(
-        directory="frontend",
-        html=True,
-    ),
-    name="frontend",
-)
