@@ -79,6 +79,11 @@ def test_registro_malformado_registra_falha_da_coleta(monkeypatch):
     monkeypatch.setattr(licitacao_repository, "iniciar_execucao", lambda _parametros: 1)
     monkeypatch.setattr(
         licitacao_repository,
+        "registros_da_coleta_recente",
+        lambda _parametros, _janela: None,
+    )
+    monkeypatch.setattr(
+        licitacao_repository,
         "falhar_execucao",
         lambda *args: falhas_registradas.append(args),
     )

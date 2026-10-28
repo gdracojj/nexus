@@ -65,6 +65,8 @@ O endpoint de leitura consulta somente os registros já persistidos no PostgreSQ
 
 O PostgreSQL mantém um advisory lock global de sessão durante a coleta, permitindo apenas uma coleta simultânea entre processos e workers conectados ao mesmo banco. Se outra coleta já estiver ativa, o comando termina com erro em vez de iniciar trabalho duplicado. Cada processo limita o pool SQLAlchemy a 5 conexões persistentes, 10 conexões excedentes e 30 segundos para aguardar uma conexão; cada worker de aplicação mantém seu próprio pool. Não há scheduler interno: a periodicidade é definida pelo operador no cron, Task Scheduler ou ferramenta equivalente.
 
+A CLI reutiliza a contagem da coleta concluída mais recente quando endpoint e parâmetros são idênticos e a execução terminou nos últimos 900 segundos. A janela pode ser alterada por `PNCP_SYNC_CACHE_TTL_SECONDS` entre 0 e 86400; `0` desativa o reuso. Uma execução falha ou ainda em andamento mais recente invalida o resultado anterior. O lock global ainda limita toda coleta a uma por vez, inclusive para UFs diferentes, como limite conservador de concorrência com o PNCP.
+
 ---
 
 ## ⚡ Integração PNCP, Paginação e Resiliência HTTP

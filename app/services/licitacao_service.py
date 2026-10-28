@@ -1,3 +1,4 @@
+from app.core.config import obter_janela_reuso_coleta_segundos
 from app.pncp.client import buscar_licitacoes, parametros_consulta
 
 
@@ -14,6 +15,14 @@ def sincronizar_licitacoes(estado: str) -> int:
 
     parametros = parametros_consulta(estado)
     with repositorio.lock_coleta_pncp():
+        janela_reuso = obter_janela_reuso_coleta_segundos()
+        registros_reutilizados = repositorio.registros_da_coleta_recente(
+            parametros,
+            janela_reuso,
+        )
+        if registros_reutilizados is not None:
+            return registros_reutilizados
+
         execucao_id = repositorio.iniciar_execucao(parametros)
         recebidos = 0
         paginas_consultadas = 0
@@ -34,7 +43,7 @@ def sincronizar_licitacoes(estado: str) -> int:
                 ao_receber_registros=contabilizar_recebidos,
                 ao_consultar_pagina=contabilizar_pagina,
             )
-            repositorio.concluir_execucao(
+            registros_processados = repositorio.concluir_execucao(
                 execucao_id,
                 dados,
                 paginas_consultadas,
@@ -56,4 +65,4 @@ def sincronizar_licitacoes(estado: str) -> int:
                 pass
             raise
 
-    return len(dados)
+    return registros_processados

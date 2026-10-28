@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
 
@@ -67,11 +67,50 @@ def iniciar_execucao(parametros: dict) -> int:
         return execucao.id
 
 
+def registros_da_coleta_recente(
+    parametros: dict,
+    janela_segundos: int,
+) -> int | None:
+    """Retorna o total processado na última coleta equivalente ainda recente."""
+    if janela_segundos <= 0:
+        return None
+
+    from sqlalchemy import select
+
+    from app.database.models import SyncExecucao
+
+    limite = datetime.now(timezone.utc) - timedelta(seconds=janela_segundos)
+    with obter_session_factory()() as sessao:
+        consulta = (
+            select(
+                SyncExecucao.status,
+                SyncExecucao.registros_processados,
+                SyncExecucao.finalizada_em,
+            )
+            .where(
+                SyncExecucao.endpoint == ENDPOINT_PNCP,
+                SyncExecucao.parametros == parametros,
+                SyncExecucao.iniciada_em >= limite,
+            )
+            .order_by(SyncExecucao.id.desc())
+            .limit(1)
+        )
+        ultima_execucao = sessao.execute(consulta).one_or_none()
+        if (
+            ultima_execucao is None
+            or ultima_execucao.status != "concluida"
+            or ultima_execucao.finalizada_em is None
+            or ultima_execucao.finalizada_em < limite
+        ):
+            return None
+        return ultima_execucao.registros_processados
+
+
 def concluir_execucao(
     execucao_id: int,
     registros: list[dict],
     paginas_consultadas: int = 0,
-) -> None:
+) -> int:
     """Upsert atômico das contratações/payloads e conclusão da execução."""
     from sqlalchemy.dialects.postgresql import insert
 
@@ -161,10 +200,11 @@ def concluir_execucao(
             execucao.finalizada_em = agora
             execucao.paginas_consultadas = paginas_consultadas
             execucao.registros_recebidos = len(registros)
-            execucao.registros_processados = len(registros)
+            execucao.registros_processados = len(registros_unicos)
             execucao.registros_com_erro = 0
             execucao.resumo_falhas = None
             sessao.commit()
+            return len(registros_unicos)
         except Exception:
             sessao.rollback()
             raise

@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    print(f"Coleta concluída para {uf}: {quantidade} registros processados.")
+    print(f"Sincronização concluída para {uf}: {quantidade} registros processados.")
     return 0
 
 

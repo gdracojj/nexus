@@ -97,6 +97,9 @@ def test_upsert_e_idempotente_e_atualiza_payload_quando_muda(banco_postgres):
         assert len(licitacoes) == 1
         id_licitacao = licitacoes[0].id
         recebido_inicial = sessao.get(models.PncpPayload, id_licitacao).recebido_em
+        execucao_inicial = sessao.get(models.SyncExecucao, primeiro_id)
+        assert execucao_inicial.registros_recebidos == 2
+        assert execucao_inicial.registros_processados == 1
 
     segundo_id = repositorio.iniciar_execucao({"uf": "SP"})
     repositorio.concluir_execucao(segundo_id, [registro("Compra de material revisada")])
@@ -220,6 +223,43 @@ def test_lock_global_impede_duas_coletas_simultaneas(banco_postgres):
         with pytest.raises(repositorio.ColetaPNCPJaEmAndamentoError):
             with repositorio.lock_coleta_pncp():
                 pass
+
+
+def test_cache_de_coleta_exige_sucesso_parametros_iguais_e_janela_vigente(
+    banco_postgres,
+):
+    parametros = {"uf": "SP", "dataInicial": "20261028"}
+    execucao_id = repositorio.iniciar_execucao(parametros)
+    repositorio.concluir_execucao(execucao_id, [registro()])
+
+    assert repositorio.registros_da_coleta_recente(parametros, 900) == 1
+    assert repositorio.registros_da_coleta_recente({"uf": "RJ"}, 900) is None
+    assert repositorio.registros_da_coleta_recente(parametros, 0) is None
+
+    with sessionmaker(bind=banco_postgres)() as sessao:
+        execucao = sessao.get(models.SyncExecucao, execucao_id)
+        execucao.finalizada_em = datetime.now(timezone.utc) - timedelta(minutes=20)
+        sessao.commit()
+
+    assert repositorio.registros_da_coleta_recente(parametros, 900) is None
+
+
+def test_cache_nao_reutiliza_coleta_falha(banco_postgres):
+    parametros = {"uf": "SP", "dataInicial": "20261028"}
+    execucao_id = repositorio.iniciar_execucao(parametros)
+    repositorio.falhar_execucao(execucao_id, RuntimeError("falha externa"))
+
+    assert repositorio.registros_da_coleta_recente(parametros, 900) is None
+
+
+def test_falha_mais_recente_invalida_cache_de_coleta_anterior(banco_postgres):
+    parametros = {"uf": "SP", "dataInicial": "20261028"}
+    sucesso_id = repositorio.iniciar_execucao(parametros)
+    repositorio.concluir_execucao(sucesso_id, [registro()])
+    falha_id = repositorio.iniciar_execucao(parametros)
+    repositorio.falhar_execucao(falha_id, RuntimeError("falha externa"))
+
+    assert repositorio.registros_da_coleta_recente(parametros, 900) is None
 
 
 def test_endpoint_consulta_registros_persistidos_sem_iniciar_coleta(banco_postgres):
