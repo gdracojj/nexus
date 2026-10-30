@@ -143,10 +143,10 @@ def test_repositorio_filtra_com_texto_insensivel_a_caixa(banco_postgres):
     execucao_id = repositorio.iniciar_execucao({"uf": "SP"})
     repositorio.concluir_execucao(execucao_id, [registro()])
 
-    total, encontrados, ultima_sincronizacao = repositorio.consultar_licitacoes(
+    total_consultado, total, encontrados, ultima_sincronizacao = repositorio.consultar_licitacoes(
         "SP", "MATERIAL"
     )
-    assert total == 1
+    assert total_consultado == total == 1
     assert len(encontrados) == 1
     assert encontrados[0]["descricao"] == "Compra de material"
     assert encontrados[0]["uf"] == "SP"
@@ -154,6 +154,60 @@ def test_repositorio_filtra_com_texto_insensivel_a_caixa(banco_postgres):
     assert encontrados[0]["orgao"] == "Órgão de teste"
     assert encontrados[0]["codigo_modalidade"] == 6
     assert ultima_sincronizacao is not None
+
+
+def test_consulta_persistida_aplica_paginacao_e_preserva_total_filtrado(
+    banco_postgres,
+):
+    execucao_id = repositorio.iniciar_execucao({"uf": "SP"})
+    registros = []
+    for indice, descricao in enumerate(
+        ["Compra material A", "Compra material B", "Compra equipamento"],
+        start=1,
+    ):
+        item = registro(descricao)
+        controle = f"12345678000199-1-{indice:06d}/2026"
+        item["numero_controle_pncp"] = controle
+        item["payload"]["numeroControlePNCP"] = controle
+        registros.append(item)
+    repositorio.concluir_execucao(execucao_id, registros)
+
+    total_consultado, total, encontrados, _ultima_sincronizacao = (
+        repositorio.consultar_licitacoes(
+            "SP", "material", page=2, page_size=1
+        )
+    )
+
+    assert total_consultado == 3
+    assert total == 2
+    assert len(encontrados) == 1
+    assert encontrados[0]["descricao"] == "Compra material B"
+
+
+def test_consulta_persistida_filtra_prazo_antes_da_paginacao(banco_postgres):
+    execucao_id = repositorio.iniciar_execucao({"uf": "SP"})
+    registro_proximo = registro("Compra próxima")
+    registro_proximo["data_encerramento_proposta"] = datetime.now(
+        timezone.utc
+    ) + timedelta(hours=12)
+    registro_proximo["payload"]["dataEncerramentoProposta"] = (
+        registro_proximo["data_encerramento_proposta"].isoformat()
+    )
+    registro_distante = registro("Compra distante")
+    registro_distante["numero_controle_pncp"] = "12345678000199-1-000002/2026"
+    registro_distante["payload"]["numeroControlePNCP"] = registro_distante[
+        "numero_controle_pncp"
+    ]
+    repositorio.concluir_execucao(
+        execucao_id, [registro_proximo, registro_distante]
+    )
+
+    total_consultado, total, encontrados, _ultima_sincronizacao = (
+        repositorio.consultar_licitacoes("SP", prazo_dias=1)
+    )
+
+    assert total_consultado == total == 1
+    assert [item["descricao"] for item in encontrados] == ["Compra próxima"]
 
 
 def test_upsert_preserva_data_da_primeira_coleta(banco_postgres):
@@ -218,9 +272,11 @@ def test_consulta_persistida_omite_oportunidades_com_prazo_encerrado(banco_postg
     oportunidade["data_encerramento_proposta"] = datetime.now(timezone.utc) - timedelta(days=1)
     repositorio.concluir_execucao(execucao_id, [oportunidade])
 
-    total, encontrados, _ultima_sincronizacao = repositorio.consultar_licitacoes("SP")
+    total_consultado, total, encontrados, _ultima_sincronizacao = (
+        repositorio.consultar_licitacoes("SP")
+    )
 
-    assert total == 0
+    assert total_consultado == total == 0
     assert encontrados == []
 
 
@@ -238,9 +294,11 @@ def test_consulta_persistida_sem_uf_retorna_todas_as_unidades_federativas(
     rio_de_janeiro["payload"]["unidadeOrgao"]["ufSigla"] = "RJ"
     repositorio.concluir_execucao(execucao_id, [sao_paulo, rio_de_janeiro])
 
-    total, encontrados, _ultima_sincronizacao = repositorio.consultar_licitacoes(None)
+    total_consultado, total, encontrados, _ultima_sincronizacao = (
+        repositorio.consultar_licitacoes(None)
+    )
 
-    assert total == 2
+    assert total_consultado == total == 2
     assert {item["uf"] for item in encontrados} == {"SP", "RJ"}
 
 
@@ -295,7 +353,9 @@ def test_endpoint_consulta_registros_persistidos_sem_iniciar_coleta(banco_postgr
     oportunidade = registro()
     repositorio.concluir_execucao(execucao_id, [oportunidade])
 
-    resposta = main.listar_licitacoes("SP", "MATERIAL")
+    resposta = main.listar_licitacoes(
+        "SP", "MATERIAL", page=1, page_size=25, prazo_dias=None
+    )
 
     assert resposta["total_consultado"] == 1
     assert resposta["total"] == 1
