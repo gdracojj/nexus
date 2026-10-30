@@ -2,7 +2,10 @@ from app.core.config import obter_janela_reuso_coleta_segundos
 from app.pncp.client import buscar_licitacoes, parametros_consulta
 
 
-def consultar_licitacoes(estado: str, produto: str = "") -> tuple[int, list[dict]]:
+def consultar_licitacoes(
+    estado: str | None,
+    produto: str = "",
+) -> tuple[int, list[dict], str | None]:
     """Retorna apenas dados persistidos; não inicia comunicação com o PNCP."""
     from app.repositories import licitacao_repository as repositorio
 

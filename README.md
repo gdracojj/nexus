@@ -4,7 +4,7 @@
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.143.0-009688?logo=fastapi)
 
-O **NEXUS** coleta oportunidades publicadas no **Portal Nacional de Contratações Públicas (PNCP)** e permite consultá-las por estado e termo do objeto através de uma API REST. A interface web não faz parte da aplicação atual. O projeto foi concebido a partir de necessidades operacionais da **RCCS Licitações** e também é um projeto de portfólio sobre integração com APIs externas e desenvolvimento backend.
+O **NEXUS** coleta oportunidades publicadas no **Portal Nacional de Contratações Públicas (PNCP)** e permite consultá-las por estado, prazo e termo do objeto através de uma API REST e de um painel web responsivo. O projeto foi concebido a partir de necessidades operacionais da **RCCS Licitações** e também é um projeto de portfólio sobre integração com APIs externas e desenvolvimento backend.
 
 Além de sua aplicação prática no mercado, o NEXUS é um projeto de portfólio focado nas disciplinas de **Desenvolvimento Backend**, **Engenharia de Dados**, **Resiliência de Integração** e **Arquitetura de Software**.
 
@@ -23,7 +23,7 @@ O projeto tem dois objetivos de produto, em estágios diferentes:
 
 ## 🎯 Status Atual do Projeto
 
-O projeto oferece uma API FastAPI. O comando de coleta consulta o PNCP, percorre as páginas informadas pela API, normaliza os registros e grava ou atualiza os dados no PostgreSQL. A API consulta os dados persistidos e filtra por UF e termo do objeto.
+O projeto oferece uma API FastAPI e um painel web sem framework JavaScript. O comando de coleta consulta o PNCP, percorre as páginas informadas pela API, normaliza os registros e grava ou atualiza os dados no PostgreSQL. A API consulta os dados persistidos; o painel apresenta prazos em visões geral, timeline e quadro.
 
 ---
 
@@ -32,6 +32,7 @@ O projeto oferece uma API FastAPI. O comando de coleta consulta o PNCP, percorre
 ### Implementadas
 * **Backend:** Python 3.10+, FastAPI e Uvicorn.
 * **Integração HTTP:** Requests para consultar o PNCP.
+* **Interface:** HTML, CSS responsivo e JavaScript em módulos ES nativos.
 * **Comunicação:** API HTTP com payloads JSON.
 * **Persistência:** PostgreSQL com SQLAlchemy e Alembic; contratações são deduplicadas pelo `numeroControlePNCP` do PNCP.
 
@@ -51,7 +52,7 @@ As dependências de execução estão declaradas em `requirements.txt`. A URL do
 O endpoint de leitura consulta somente os registros já persistidos no PostgreSQL. A coleta do PNCP é iniciada separadamente pelo comando `python -m app.cli coletar --uf RJ`; esse comando pode ser executado manualmente ou agendado pelo scheduler do sistema operacional.
 
 ```
-[ Cliente HTTP ] ──▶ [ FastAPI ] ──▶ [ Repository ] ──▶ [ PostgreSQL ]
+[ Navegador / Painel ] ──▶ [ FastAPI ] ──▶ [ Repository ] ──▶ [ PostgreSQL ]
                                             ▲
 [ Scheduler / Operador ] ──▶ [ CLI ] ──▶ [ Serviço de Coleta ]
                                              │
@@ -109,7 +110,14 @@ nexus/
 │   │   └── licitacao_repository.py  # upsert e consultas persistidas
 │   ├── services/
 │   │   └── licitacao_service.py  # consulta persistida e serviço de coleta
-│   └── main.py               # Aplicação FastAPI e rota REST
+│   └── main.py               # Aplicação FastAPI, rota REST e arquivos estáticos
+├── frontend/
+│   ├── api.js                 # cliente HTTP e normalização da resposta
+│   ├── app.js                 # navegação, filtros e renderização
+│   ├── index.html             # shell da aplicação
+│   ├── nexus.css              # temas e layout responsivo
+│   ├── prazo.js               # parsing e classificação de prazos
+│   └── theme.js               # restauração do tema salvo
 ├── tests/
 │   ├── test_api_route.py
 │   ├── test_cli.py
@@ -212,10 +220,10 @@ Consulta oportunidades vigentes já persistidas no PostgreSQL (ou registros sem 
 #### Parâmetros da Requisição (Query Params)
 | Parâmetro | Tipo | Obrigatório | Descrição |
 | :--- | :--- | :--- | :--- |
-| `uf` | `string` | **Sim** | Sigla da Unidade Federativa com 2 caracteres (Ex: `RJ`, `SP`). |
+| `uf` | `string` | Não | Sigla da Unidade Federativa com 2 caracteres (Ex: `RJ`, `SP`). Se omitida, consulta todas as UFs. |
 | `produto` | `string` | Não | Termo opcional para busca sem distinção entre maiúsculas e minúsculas na descrição/objeto. O padrão é vazio. |
 
-`uf` é removido de espaços nas extremidades e convertido para maiúsculas. A rota verifica se possui exatamente dois caracteres; não valida se esses caracteres correspondem a uma UF oficial. O termo `produto` é removido de espaços nas extremidades e convertido para minúsculas.
+`uf`, quando informado, é removido de espaços nas extremidades e convertido para maiúsculas. A rota verifica se possui exatamente dois caracteres; não valida se esses caracteres correspondem a uma UF oficial. O termo `produto` é removido de espaços nas extremidades e convertido para minúsculas.
 
 #### Exemplo de Chamada
 ```bash
@@ -229,25 +237,31 @@ curl -X GET "http://127.0.0.1:8000/api/licitacoes?uf=RJ&produto=material"
   "produto": "material",
   "total_consultado": 150,
   "total": 12,
+  "ultima_sincronizacao": "2026-10-30T12:00:00+00:00",
   "resultados": [
     {
+      "numero_controle_pncp": "12345678000199-1-000001/2026",
       "numero": "00001/2026",
       "descricao": "Aquisição de material de expediente...",
       "codigo_unidade": "123456",
+      "unidade": "123456",
+      "orgao": "Órgão público",
+      "codigo_modalidade": 6,
       "municipio": "Rio de Janeiro",
       "uf": "RJ",
+      "valor_estimado": 1200.5,
       "data_encerramento_proposta": "2026-10-15T23:59:59"
     }
   ]
 }
 ```
 
-`total_consultado` conta os registros persistidos com prazo vigente (ou sem prazo informado) para a UF antes do filtro `produto`; `total` conta os registros que correspondem à UF e ao termo informado. A rota também pode responder:
+`total_consultado` conta os registros persistidos com prazo vigente (ou sem prazo informado) para a UF antes do filtro `produto`; `total` conta os registros que correspondem à UF e ao termo informado. Se `uf` for omitida, ambos consideram todas as UFs. `ultima_sincronizacao` informa a conclusão mais recente de uma sincronização bem-sucedida. A rota também pode responder:
 
 | Status | Situação | Corpo |
 | :--- | :--- | :--- |
 | `400` | `uf` com comprimento diferente de 2 | `{"detail":"Informe a sigla do estado com 2 letras."}` |
-| `422` | Parâmetro obrigatório ausente ou parâmetros que não passam pela validação do FastAPI | Corpo de validação do FastAPI |
+| `422` | Parâmetros que não passam pela validação de tipos do FastAPI | Corpo de validação do FastAPI |
 | `500` | Falha inesperada ao consultar o PostgreSQL ou erro interno | `{"detail":"Erro interno ao processar a consulta."}` |
 
 Falhas do PNCP ocorrem no comando de coleta, que termina com código diferente de zero; não alteram o status HTTP das consultas aos dados já persistidos. As mensagens públicas de erro `500` são genéricas e não incluem detalhes técnicos.
@@ -278,7 +292,7 @@ O desenvolvimento do NEXUS é estruturado de forma iterativa e incremental:
   - [ ] Controle automatizado de saldo de quantitativos, prazos de vigência e reajustes.
 - [ ] **Fase 5 — Observabilidade & Conteinerização**
   - [x] Testes unitários, de integração e do contrato HTTP com `pytest`.
-  - [x] Remoção da interface web não mantida da aplicação.
+  - [x] Painel web para consulta e acompanhamento visual dos prazos.
   - [ ] Conteinerização total da solução via `Docker` e `Docker Compose`.
   - [ ] Estruturação de dashboards analíticos e exploração de recursos de IA para leitura de editais.
 
@@ -287,7 +301,7 @@ O desenvolvimento do NEXUS é estruturado de forma iterativa e incremental:
 ## ⚠️ Limitações Conhecidas
 
 * **Coleta Síncrona Operacional:** o comando que coleta o PNCP permanece ativo durante paginação, tentativas e persistência, dentro do prazo configurado; a API de leitura não aguarda esse trabalho.
-* **Sem Interface Web:** o serviço expõe a API REST e o Swagger UI; não serve painel HTML/CSS/JavaScript.
+* **Painel informativo:** o painel apresenta oportunidades persistidas pelo NEXUS; a confirmação e os detalhes oficiais devem ser consultados no PNCP.
 * **Filtros Textuais Básicos:** A filtragem por palavra-chave é puramente textual (case-insensitive), sem suporte a sinônimos ou busca semântica (planejada para etapas futuras).
 * **Ausência de Módulo Persistente Pós-Compra:** As telas de acompanhamento de atas e saldos encontram-se em fase de especificação e modelagem.
 
