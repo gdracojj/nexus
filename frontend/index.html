@@ -7,27 +7,32 @@
   <title>NEXUS · Licitações</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="nexus.css">
   <script src="theme.js"></script>
 </head>
 <body>
   <a class="skip" href="#main">Ir para o conteúdo</a>
-  <aside class="side" aria-label="Navegação principal">
-    <div class="brand"><span class="logo" aria-hidden="true">N</span><span>NEXUS</span></div>
-    <nav>
-      <a href="#/geral" data-route="geral">Visão geral</a>
-      <a href="#/licitacoes" data-route="licitacoes">Licitações</a>
-      <span class="nav-off" aria-disabled="true">Atas de Registro de Preços <em>Planejado</em></span>
-    </nav>
-  </aside>
-  <div class="shell">
-    <header class="top">
-      <div id="fonte" class="muted">Fonte: PNCP · base coletada pelo NEXUS</div>
-      <button id="tema" class="btn" type="button" aria-pressed="false">Tema escuro</button>
-    </header>
-    <main id="main" tabindex="-1"></main>
-  </div>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#/geral" aria-label="NEXUS, visão geral">
+        <svg class="logo" viewBox="0 0 28 28" aria-hidden="true">
+          <path d="M5 23V5h4l10 12V5h4v18h-4L9 11v12z" fill="currentColor"/>
+        </svg>
+        <span>NEXUS</span>
+      </a>
+      <nav class="main-nav" aria-label="Navegação principal">
+        <a href="#/geral" data-route="geral">Visão geral</a>
+        <a href="#/licitacoes" data-route="licitacoes">Licitações</a>
+        <span class="nav-off" aria-disabled="true">Atas <em>Planejado</em></span>
+      </nav>
+      <div class="top-actions">
+        <span id="fonte" class="source muted">Fonte: PNCP · base NEXUS</span>
+        <button id="tema" class="btn" type="button" aria-pressed="false">Tema escuro</button>
+      </div>
+    </div>
+  </header>
+  <main id="main" class="page" tabindex="-1"></main>
   <dialog id="drawer" aria-labelledby="drawer-t"></dialog>
   <script type="module" src="app.js"></script>
 </body>
