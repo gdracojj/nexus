@@ -236,7 +236,10 @@ def falhar_execucao(
 def consultar_licitacoes(
     uf: str | None,
     produto: str = "",
-) -> tuple[int, list[dict], str | None]:
+    page: int = 1,
+    page_size: int = 25,
+    prazo_dias: int | None = None,
+) -> tuple[int, int, list[dict], str | None]:
     """Consulta os registros persistidos sem acessar o PNCP."""
     from sqlalchemy import func, or_, select
 
@@ -252,20 +255,30 @@ def consultar_licitacoes(
         ]
         if uf is not None:
             filtros.append(Licitacao.uf == uf)
+        if prazo_dias is not None:
+            filtros.append(
+                Licitacao.data_encerramento_proposta <= agora + timedelta(days=prazo_dias)
+            )
         total_consultado = sessao.scalar(
             select(func.count()).select_from(Licitacao).where(*filtros)
         )
 
-        consulta = select(Licitacao).where(*filtros)
+        filtros_resultado = list(filtros)
         if produto:
-            consulta = consulta.where(
+            filtros_resultado.append(
                 Licitacao.descricao.icontains(produto, autoescape=True)
             )
+        total = sessao.scalar(
+            select(func.count()).select_from(Licitacao).where(*filtros_resultado)
+        )
+        consulta = select(Licitacao).where(*filtros_resultado)
         registros = sessao.scalars(
             consulta.order_by(
                 Licitacao.data_encerramento_proposta.asc().nullslast(),
                 Licitacao.numero,
             )
+            .offset((page - 1) * page_size)
+            .limit(page_size)
         ).all()
         ultima_sincronizacao = sessao.scalar(
             select(func.max(SyncExecucao.finalizada_em)).where(
@@ -274,6 +287,7 @@ def consultar_licitacoes(
         )
         return (
             total_consultado,
+            total,
             [_formatar_licitacao(registro) for registro in registros],
             ultima_sincronizacao.isoformat() if ultima_sincronizacao else None,
         )

@@ -222,12 +222,15 @@ Consulta oportunidades vigentes já persistidas no PostgreSQL (ou registros sem 
 | :--- | :--- | :--- | :--- |
 | `uf` | `string` | Não | Sigla da Unidade Federativa com 2 caracteres (Ex: `RJ`, `SP`). Se omitida, consulta todas as UFs. |
 | `produto` | `string` | Não | Termo opcional para busca sem distinção entre maiúsculas e minúsculas na descrição/objeto. O padrão é vazio. |
+| `page` | `integer` | Não | Página baseada em 1. Padrão `1`; intervalo permitido de `1` a `10000`. |
+| `page_size` | `integer` | Não | Quantidade máxima de registros por resposta. Padrão `25`; intervalo permitido de `1` a `100`. |
+| `prazo_dias` | `integer` | Não | Limita oportunidades aos próximos dias, a partir do momento da consulta. Aceita de `1` a `30`; sem o parâmetro, inclui todos os prazos vigentes e os registros sem prazo. |
 
 `uf`, quando informado, é removido de espaços nas extremidades e convertido para maiúsculas. A rota verifica se possui exatamente dois caracteres; não valida se esses caracteres correspondem a uma UF oficial. O termo `produto` é removido de espaços nas extremidades e convertido para minúsculas.
 
 #### Exemplo de Chamada
 ```bash
-curl -X GET "http://127.0.0.1:8000/api/licitacoes?uf=RJ&produto=material"
+curl -X GET "http://127.0.0.1:8000/api/licitacoes?uf=RJ&produto=material&page=1&page_size=25"
 ```
 
 #### Exemplo de Resposta (`200 OK`)
@@ -237,6 +240,9 @@ curl -X GET "http://127.0.0.1:8000/api/licitacoes?uf=RJ&produto=material"
   "produto": "material",
   "total_consultado": 150,
   "total": 12,
+  "page": 1,
+  "page_size": 25,
+  "total_pages": 1,
   "ultima_sincronizacao": "2026-10-30T12:00:00+00:00",
   "resultados": [
     {
@@ -250,18 +256,18 @@ curl -X GET "http://127.0.0.1:8000/api/licitacoes?uf=RJ&produto=material"
       "municipio": "Rio de Janeiro",
       "uf": "RJ",
       "valor_estimado": 1200.5,
-      "data_encerramento_proposta": "2026-10-15T23:59:59"
+      "data_encerramento_proposta": "2026-11-15T23:59:59"
     }
   ]
 }
 ```
 
-`total_consultado` conta os registros persistidos com prazo vigente (ou sem prazo informado) para a UF antes do filtro `produto`; `total` conta os registros que correspondem à UF e ao termo informado. Se `uf` for omitida, ambos consideram todas as UFs. `ultima_sincronizacao` informa a conclusão mais recente de uma sincronização bem-sucedida. A rota também pode responder:
+`total_consultado` conta os registros da UF e do período antes do filtro `produto`; sem `prazo_dias`, inclui oportunidades vigentes e registros sem prazo, e com `prazo_dias` inclui somente oportunidades dentro desse intervalo. `total` conta todos os registros correspondentes aos filtros, independentemente da página atual. `page` informa a página devolvida, `page_size` o limite solicitado e `total_pages` o total de páginas (zero quando não há resultados). A ordenação é por prazo de encerramento crescente e número da contratação. Se `uf` for omitida, a consulta considera todas as UFs. `ultima_sincronizacao` informa a conclusão mais recente de uma sincronização bem-sucedida. A rota também pode responder:
 
 | Status | Situação | Corpo |
 | :--- | :--- | :--- |
 | `400` | `uf` com comprimento diferente de 2 | `{"detail":"Informe a sigla do estado com 2 letras."}` |
-| `422` | Parâmetros que não passam pela validação de tipos do FastAPI | Corpo de validação do FastAPI |
+| `422` | Tipos inválidos, `page` fora de `1–10000`, `page_size` fora de `1–100` ou `prazo_dias` fora de `1–30` | Corpo de validação do FastAPI |
 | `500` | Falha inesperada ao consultar o PostgreSQL ou erro interno | `{"detail":"Erro interno ao processar a consulta."}` |
 
 Falhas do PNCP ocorrem no comando de coleta, que termina com código diferente de zero; não alteram o status HTTP das consultas aos dados já persistidos. As mensagens públicas de erro `500` são genéricas e não incluem detalhes técnicos.

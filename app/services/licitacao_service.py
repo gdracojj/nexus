@@ -5,11 +5,20 @@ from app.pncp.client import buscar_licitacoes, parametros_consulta
 def consultar_licitacoes(
     estado: str | None,
     produto: str = "",
-) -> tuple[int, list[dict], str | None]:
+    page: int = 1,
+    page_size: int = 25,
+    prazo_dias: int | None = None,
+) -> tuple[int, int, list[dict], str | None]:
     """Retorna apenas dados persistidos; não inicia comunicação com o PNCP."""
     from app.repositories import licitacao_repository as repositorio
 
-    return repositorio.consultar_licitacoes(estado, produto)
+    return repositorio.consultar_licitacoes(
+        estado,
+        produto,
+        page=page,
+        page_size=page_size,
+        prazo_dias=prazo_dias,
+    )
 
 
 def sincronizar_licitacoes(estado: str) -> int:

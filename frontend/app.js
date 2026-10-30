@@ -2,22 +2,24 @@ import {buscar} from './api.js';
 import {classificar,BUCKETS,diaKey,rotuloDia,dataCompleta,parsePrazo,horaCurta,restante} from './prazo.js';
 
 const UFS='AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ');
-const S={items:[],total:0,sync:null,status:'idle',erro:null,f:{produto:'',uf:''},modo:'timeline',periodo:'tudo',pag:1,ctl:null};
+const S={items:[],total:0,totalPages:0,page:1,pageSize:25,sync:null,status:'idle',erro:null,f:{produto:'',uf:''},modo:'timeline',periodo:'tudo',ctl:null};
 const $=s=>document.querySelector(s),main=$('#main');
 const h=(t,a={},...c)=>{const e=document.createElement(t);for(const[k,v]of Object.entries(a)){if(k==='class')e.className=v;else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);else if(v!==false&&v!=null)e.setAttribute(k,v===true?'':v)}e.append(...c.flat().filter(x=>x!=null&&x!==false));return e};
 const brl=v=>v==null||isNaN(+v)?'Não informado':new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(+v);
 const ICON={urgente:'▲ ',atencao:'● ',encerrado:'✕ ',normal:'',sem:'? '};
 const cls=i=>({...i,c:classificar(i.prazo)});
 
-async function carregar(){
-  S.ctl?.abort();S.ctl=new AbortController();S.status='loading';S.pag=1;render();
-  try{const r=await buscar(S.f,S.ctl.signal);Object.assign(S,{items:r.items.map(cls),total:r.total,sync:r.sync,status:'ok',erro:null})}
+async function carregar({reset=true}={}){
+  if(reset)S.page=1;
+  S.ctl?.abort();S.ctl=new AbortController();S.status='loading';render();
+  const rota=location.hash.replace('#/','')||'geral';
+  const prazoDias=rota==='licitacoes'&&S.periodo!=='tudo'?Number(S.periodo):null;
+  try{const r=await buscar({...S.f,page:S.page,pageSize:S.pageSize,prazoDias},S.ctl.signal);Object.assign(S,{items:r.items.map(cls),total:r.total,totalPages:r.totalPages,page:r.page,pageSize:r.pageSize,sync:r.sync,status:'ok',erro:null})}
   catch(e){if(e.name==='AbortError')return;S.status='erro';S.erro=e}
   render();
 }
 const ordenar=l=>[...l].sort((a,b)=>{const r=x=>x.c.estado==='encerrado'?2:x.c.date?0:1;return r(a)-r(b)||(r(a)===2?b.c.date-a.c.date:(a.c.date??0)-(b.c.date??0))});
-const noPeriodo=i=>S.periodo==='tudo'||(i.c.date&&i.c.ms>0&&i.c.ms<=S.periodo*864e5);
-const visiveis=()=>ordenar(S.items.filter(noPeriodo));
+const visiveis=()=>ordenar(S.items);
 
 const countdown=i=>h('div',{class:'cd '+i.c.estado},ICON[i.c.estado],i.c.label);
 const tm=i=>{const c=i.c,p=parsePrazo(i.prazo);return h('div',{class:'tm '+c.estado},c.date&&h('small',{},rotuloDia(c.date)),h('b',{},c.date&&!p.semHora?horaCurta(c.date):'—'),h('span',{},c.estado==='encerrado'?'✕ Encerrado':c.date?ICON[c.estado]+'em '+restante(c.ms):c.label))};
@@ -35,11 +37,26 @@ function abrir(i){
 }
 const estado=()=>{
   if(S.status==='loading')return h('div',{role:'status'},h('span',{class:'muted'},'Consultando a base do NEXUS…'),...[1,2,3].map(()=>h('div',{class:'skel'})));
-  if(S.status==='erro')return h('div',{class:'notice err',role:'alert'},S.erro.message+' ',h('button',{class:'btn',type:'button',onclick:carregar},'Tentar novamente'));
-  if(!S.items.length)return h('div',{class:'empty'},(S.f.produto||S.f.uf)?'Nenhuma licitação para estes filtros. Remova um filtro ou tente outro termo.':'A base ainda não tem licitações coletadas. Execute a sincronização com o PNCP.');
+  if(S.status==='erro')return h('div',{class:'notice err',role:'alert'},S.erro.message+' ',h('button',{class:'btn',type:'button',onclick:()=>carregar({reset:false})},'Tentar novamente'));
+  if(!S.items.length){
+    const rota=location.hash.replace('#/','')||'geral';
+    const periodoAtivo=rota==='licitacoes'&&S.periodo!=='tudo';
+    const mensagem=S.total>0?'Não há resultados nesta página. Volte à página anterior.':
+      (S.f.produto||S.f.uf||periodoAtivo)?'Nenhuma licitação para estes filtros. Ajuste o termo, a UF ou o período.':
+      S.sync?'Não há oportunidades vigentes na base coletada.':'A base ainda não tem licitações coletadas. Execute a sincronização com o PNCP.';
+    return h('div',{class:'empty'},mensagem);
+  }
   return null;
 };
-const aviso=()=>h('div',{class:'muted'},`${S.items.length} licitações carregadas${S.total>S.items.length?` de ${S.total}`:''}. O painel mostra apenas a base coletada pelo NEXUS, não todas as contratações do PNCP. `,S.sync?`Última sincronização: ${dataCompleta(new Date(S.sync))}.`:'Última sincronização: não informada pela API atual.');
+const aviso=()=>{
+  const inicio=S.total?(S.page-1)*S.pageSize+1:0,fim=Math.min(S.page*S.pageSize,S.total);
+  const faixa=S.total?`Exibindo ${inicio}–${fim} de ${S.total} licitações. `:'Nenhuma licitação corresponde à consulta. ';
+  return h('div',{class:'muted'},`${faixa}O painel mostra a base coletada pelo NEXUS, não todas as contratações do PNCP. `,S.sync?`Última sincronização: ${dataCompleta(new Date(S.sync))}.`:'Última sincronização: não informada pela API atual.');
+};
+const paginacao=()=>S.totalPages>1&&h('div',{class:'pg','aria-label':'Paginação das licitações'},
+  h('button',{class:'btn',type:'button',disabled:S.page<=1,onclick:()=>{S.page--;carregar({reset:false})}},'Anterior'),
+  h('span',{class:'muted',role:'status'},`Página ${S.page} de ${S.totalPages}`),
+  h('button',{class:'btn',type:'button',disabled:S.page>=S.totalPages,onclick:()=>{S.page++;carregar({reset:false})}},'Próxima'));
 
 function timeline(l){
   const g=new Map();for(const i of l){const k=i.c.estado==='encerrado'?'enc':i.c.date?diaKey(i.c.date):'sem';(g.get(k)||g.set(k,[]).get(k)).push(i)}
@@ -51,8 +68,7 @@ function timeline(l){
 const quadro=l=>h('div',{class:'board'},BUCKETS.map(([k,nome])=>{const it=l.filter(i=>i.c.bucket===k);
   return h('section',{class:'col '+({hoje:'urgente',amanha:'atencao'}[k]||''),'aria-label':nome},h('h3',{},nome,h('span',{class:'mono muted'},it.length)),h('div',{class:'list'},it.slice(0,50).map(card),it.length>50&&h('div',{class:'muted'},`+${it.length-50} na tabela`)))}));
 function tabela(l){
-  const n=25,pg=Math.min(S.pag,Math.ceil(l.length/n)||1),fat=l.slice((pg-1)*n,pg*n);
-  const linhas=fat.map(i=>h('tr',{},
+  const linhas=l.map(i=>h('tr',{},
     h('td',{},countdown(i)),
     h('td',{},
       h('button',{type:'button',onclick:()=>abrir(i)},(i.objeto||'Objeto não informado').slice(0,140)),
@@ -64,11 +80,7 @@ function tabela(l){
     h('caption',{class:'muted',style:'text-align:left;padding:4px 10px'},'Licitações ordenadas por prazo de propostas'),
     h('thead',{},h('tr',{},['Prazo','Licitação','Órgão / unidade','UF','Valor'].map(x=>h('th',{scope:'col'},x)))),
     h('tbody',{},linhas));
-  const paginacao=h('div',{class:'pg'},
-    h('button',{class:'btn',type:'button',disabled:pg<=1,onclick:()=>{S.pag=pg-1;render()}},'Anterior'),
-    h('span',{class:'muted'},`Página ${pg} de ${Math.ceil(l.length/n)||1}`),
-    h('button',{class:'btn',type:'button',disabled:pg*n>=l.length,onclick:()=>{S.pag=pg+1;render()}},'Próxima'));
-  return h('div',{},h('div',{class:'tw'},tabela),paginacao);
+  return h('div',{class:'tw'},tabela);
 }
 
 function geral(){
@@ -76,24 +88,24 @@ function geral(){
   const por={};S.items.forEach(i=>{if(i.uf)por[i.uf]=(por[i.uf]||0)+1});const top=Object.entries(por).sort((a,b)=>b[1]-a[1]).slice(0,8),max=top[0]?.[1]||1;
   const e=estado(),nx=prox[0],hero=nx&&h('button',{class:'hero '+nx.c.estado,type:'button',onclick:()=>abrir(nx)},h('span',{class:'muted'},'Próximo prazo de propostas'),h('b',{class:'mono'},restante(nx.c.ms)),h('span',{},nx.objeto||'Objeto não informado'),h('span',{class:'muted'},[nx.orgao||nx.unidade,nx.uf].filter(Boolean).join(' · ')));
   const metricas=[
-    ['Licitações carregadas',S.items.length],
+    ['Licitações nesta página',S.items.length],
     ['Prazo hoje',c('hoje')],
     ['Em até 3 dias',c('hoje')+c('amanha')+c('tres')],
     ['Sem prazo informado',c('semdata')],
   ].map(([nome,valor])=>h('div',{},h('b',{},S.status==='ok'?valor:'—'),h('span',{},nome)));
   const painelPrazos=h('div',{class:'panel'},
-    h('h2',{},'Próximos prazos'),
+    h('h2',{},'Próximos prazos nesta página'),
     h('div',{class:'list'},prox.length?prox.map(card):h('div',{class:'muted'},'Nenhum prazo futuro nos resultados carregados.')),
     h('p',{},h('a',{href:'#/licitacoes'},'Ver todas as licitações')));
   const painelUf=h('div',{class:'panel'},
-    h('h2',{},'Distribuição por UF'),
+    h('h2',{},'Distribuição por UF nesta página'),
     top.map(([uf,quantidade])=>h('div',{class:'uf'},
       h('span',{class:'mono'},uf),
       h('i',{style:`width:${quantidade/max*100}%`}),
       h('span',{class:'mono muted'},quantidade))));
   const conteudo=e||h('div',{class:'cols'},painelPrazos,painelUf);
   return h('div',{},h('h1',{},'Visão geral'),aviso(),h('div',{class:'metrics'},metricas),
-    S.status==='ok'&&hero,conteudo);
+    S.status==='ok'&&hero,conteudo,paginacao());
 }
 function licitacoes(){
   const form=h('form',{class:'filters',onsubmit:ev=>{ev.preventDefault();S.f={produto:ev.target.produto.value.trim().slice(0,100),uf:ev.target.uf.value};carregar()}},
@@ -102,14 +114,15 @@ function licitacoes(){
     h('button',{class:'btn pri',type:'submit'},'Aplicar'),
     h('button',{class:'btn',type:'button',onclick:()=>{S.f={produto:'',uf:''};carregar()}},'Limpar'));
   const seg=(lista,atual,fn,rot)=>h('div',{class:'seg',role:'group','aria-label':rot},lista.map(([v,n])=>h('button',{class:'btn',type:'button','aria-pressed':String(v===atual),onclick:()=>fn(v)},n)));
-  const chips=[S.f.produto&&`Produto: ${S.f.produto}`,S.f.uf&&`UF: ${S.f.uf}`].filter(Boolean);
-  const e=estado(),l=visiveis(),oculto=S.items.length-l.length;
+  const chips=[S.f.produto&&`Produto: ${S.f.produto}`,S.f.uf&&`UF: ${S.f.uf}`,S.periodo!=='tudo'&&`Prazo: ${S.periodo} dias`].filter(Boolean);
+  const e=estado(),l=visiveis();
   return h('div',{},h('h1',{},'Licitações'),form,
     chips.length>0&&h('div',{class:'chips'},chips.map(c=>h('span',{class:'chip'},c))),
     h('div',{class:'bar'},seg([['tabela','Tabela'],['timeline','Timeline'],['quadro','Quadro']],S.modo,v=>{S.modo=v;render()},'Visualização'),
-      seg([[7,'7 dias'],[15,'15 dias'],[30,'30 dias'],['tudo','Todos']],S.periodo,v=>{S.periodo=v;S.pag=1;render()},'Período do prazo')),
-    aviso(),S.periodo!=='tudo'&&oculto>0&&h('div',{class:'notice'},`${oculto} licitações fora do período (incluindo encerradas e sem prazo) estão ocultas.`),
-    e||(!l.length?h('div',{class:'empty'},'Nenhuma licitação com prazo neste período. Escolha "Todos".'):{timeline,quadro,tabela}[S.modo](l)));
+      seg([[7,'7 dias'],[15,'15 dias'],[30,'30 dias'],['tudo','Todos']],S.periodo,v=>{S.periodo=v;carregar()},'Período do prazo')),
+    aviso(),
+    e||(!l.length?h('div',{class:'empty'},'Nenhuma licitação com prazo neste período. Escolha "Todos".'):{timeline,quadro,tabela}[S.modo](l)),
+    paginacao());
 }
 
 function render(){
@@ -121,6 +134,6 @@ function render(){
 }
 const tema=$('#tema'),syncTema=()=>{const d=document.documentElement.dataset.theme==='dark';tema.textContent=d?'Tema escuro':'Tema claro';tema.setAttribute('aria-pressed',String(d))};
 tema.onclick=()=>{const t=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=t;try{localStorage.setItem('nexus-tema',t)}catch(e){}syncTema()};
-addEventListener('hashchange',()=>{render();main.focus()});syncTema();
+addEventListener('hashchange',()=>{carregar();main.focus()});syncTema();
 setInterval(()=>{if(S.status==='ok'&&!$('#drawer').open&&document.activeElement?.tagName!=='INPUT'){S.items=S.items.map(cls);render()}},60000);
 carregar();
