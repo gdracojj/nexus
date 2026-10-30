@@ -16,14 +16,21 @@ URL_PNCP = "https://pncp.gov.br/api/consulta/v1/contratacoes/proposta"
 INTERVALO_ENTRE_PAGINAS = 1.0
 MAX_TENTATIVAS = 5
 MAX_ESPERA_RETRY_AFTER = 60
-MAX_PAGINAS_CONSULTA = 100
-PRAZO_TOTAL_CONSULTA_SEGUNDOS = 120.0
+MAX_PAGINAS_CONSULTA = 110
+MAX_PAGINAS_CONSULTA_SP = 160
+PRAZO_TOTAL_CONSULTA_SEGUNDOS = 300.0
 TIMEOUT_REQUISICAO_SEGUNDOS = 30.0
 CODIGOS_HTTP_REPETIVEIS = frozenset({408, 429, 500, 502, 503, 504})
 
 
 class LimitePaginacaoPNCPError(requests.exceptions.RequestException):
     """O PNCP informou mais páginas do que esta consulta aceita processar."""
+
+
+def _limite_paginas_consulta(estado: str) -> int:
+    if estado.strip().upper() == "SP":
+        return MAX_PAGINAS_CONSULTA_SP
+    return MAX_PAGINAS_CONSULTA
 
 
 def parametros_consulta(estado: str, agora: datetime | None = None) -> dict:
@@ -165,6 +172,7 @@ def buscar_licitacoes(
     ao_consultar_pagina=None,
 ):
     prazo_final = time.monotonic() + PRAZO_TOTAL_CONSULTA_SEGUNDOS
+    limite_paginas = _limite_paginas_consulta(estado)
 
     if parametros_base is None:
         parametros_base = parametros_consulta(estado)
@@ -199,10 +207,10 @@ def buscar_licitacoes(
                 "PNCP retornou um total de páginas inválido."
             )
 
-        if total_paginas > MAX_PAGINAS_CONSULTA:
+        if total_paginas > limite_paginas:
             raise LimitePaginacaoPNCPError(
                 f"PNCP informou {total_paginas} páginas; "
-                f"o limite desta consulta é {MAX_PAGINAS_CONSULTA}."
+                f"o limite desta consulta é {limite_paginas}."
             )
 
         licitacoes_pagina = dados.get("data")

@@ -76,7 +76,7 @@ A aplicação consome o seguinte endpoint oficial do PNCP:
 `https://pncp.gov.br/api/consulta/v1/contratacoes/proposta`
 
 ### Paginação e limite de taxa
-O cliente percorre as páginas usando o campo `totalPaginas` retornado pelo PNCP e agrega os registros antes de normalizá-los. Cada consulta aceita no máximo 100 páginas. O prazo de 120 segundos é compartilhado entre todas as páginas, tentativas, esperas e normalização dos registros.
+O cliente percorre as páginas usando o campo `totalPaginas` retornado pelo PNCP e agrega os registros antes de normalizá-los. Cada consulta aceita no máximo 110 páginas; para SP, o limite é 160. O prazo de 300 segundos é compartilhado entre todas as páginas, tentativas, esperas e normalização dos registros.
 
 ### Camada Inicial de Resiliência Implementada
 O comportamento implementado em `app/pncp/client.py` é:
@@ -86,7 +86,7 @@ O comportamento implementado em `app/pncp/client.py` é:
 * **`Retry-After`:** aceita segundos inteiros ou uma data HTTP. Datas passadas resultam em espera zero. Esperas solicitadas acima de 60 segundos causam falha imediata.
 * **Falhas permanentes:** outros status HTTP e erros TLS não são repetidos. Se o prazo total acabar antes de uma nova tentativa, a coleta falha e o comando termina com código diferente de zero.
 
-> A coleta é síncrona no processo CLI e depende da disponibilidade e do tempo de resposta do PNCP. Requests limita a inatividade da conexão, não o tempo absoluto de download da resposta; por isso, uma resposta que envie dados continuamente pode ultrapassar o prazo de 120 segundos. A rota de leitura não depende do PNCP e continua consultando os registros já persistidos durante uma indisponibilidade externa.
+> A coleta é síncrona no processo CLI e depende da disponibilidade e do tempo de resposta do PNCP. Requests limita a inatividade da conexão, não o tempo absoluto de download da resposta; por isso, uma resposta que envie dados continuamente pode ultrapassar o prazo total de 300 segundos. A rota de leitura não depende do PNCP e continua consultando os registros já persistidos durante uma indisponibilidade externa.
 
 ---
 

@@ -4,21 +4,27 @@ import requests
 from app.pncp import client
 
 
-def test_buscar_licitacoes_processa_ate_o_limite_de_paginas(monkeypatch):
+@pytest.mark.parametrize(
+    ("estado", "limite"),
+    [("RJ", client.MAX_PAGINAS_CONSULTA), ("SP", client.MAX_PAGINAS_CONSULTA_SP)],
+)
+def test_buscar_licitacoes_processa_ate_o_limite_de_paginas(
+    monkeypatch, estado, limite
+):
     paginas_solicitadas = []
 
     def buscar_pagina_fake(url, parametros, **_kwargs):
         paginas_solicitadas.append(parametros["pagina"])
-        return {"data": [], "totalPaginas": client.MAX_PAGINAS_CONSULTA}
+        return {"data": [], "totalPaginas": limite}
 
     monkeypatch.setattr(client, "buscar_pagina", buscar_pagina_fake)
     monkeypatch.setattr(client.time, "sleep", lambda _segundos: None)
 
-    resultado = client.buscar_licitacoes("RJ")
+    resultado = client.buscar_licitacoes(estado)
 
     assert resultado == []
     assert paginas_solicitadas == list(
-        range(1, client.MAX_PAGINAS_CONSULTA + 1)
+        range(1, limite + 1)
     )
 
 
@@ -34,17 +40,26 @@ def test_buscar_licitacoes_aceita_resposta_vazia_com_zero_paginas(monkeypatch):
     assert client.buscar_licitacoes("RJ") == []
 
 
-def test_buscar_licitacoes_rejeita_total_de_paginas_acima_do_limite(monkeypatch):
+@pytest.mark.parametrize(
+    ("estado", "limite"),
+    [("RJ", client.MAX_PAGINAS_CONSULTA), ("SP", client.MAX_PAGINAS_CONSULTA_SP)],
+)
+def test_buscar_licitacoes_rejeita_total_de_paginas_acima_do_limite(
+    monkeypatch, estado, limite
+):
     chamadas = []
 
     def buscar_pagina_fake(url, parametros, **_kwargs):
         chamadas.append(parametros["pagina"])
-        return {"data": [], "totalPaginas": client.MAX_PAGINAS_CONSULTA + 1}
+        return {"data": [], "totalPaginas": limite + 1}
 
     monkeypatch.setattr(client, "buscar_pagina", buscar_pagina_fake)
 
-    with pytest.raises(client.LimitePaginacaoPNCPError, match="101.*100"):
-        client.buscar_licitacoes("RJ")
+    with pytest.raises(
+        client.LimitePaginacaoPNCPError,
+        match=rf"{limite + 1}.*{limite}",
+    ):
+        client.buscar_licitacoes(estado)
 
     assert chamadas == [1]
 
