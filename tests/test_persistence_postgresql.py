@@ -309,7 +309,7 @@ def test_endpoint_consulta_registros_persistidos_sem_iniciar_coleta(banco_postgr
     assert item["codigo_modalidade"] == 6
     assert item["municipio"] == "São Paulo"
     assert item["uf"] == "SP"
-    assert item["data_encerramento_proposta"] == oportunidade[
-        "data_encerramento_proposta"
-    ].isoformat()
+    prazo_retornado = datetime.fromisoformat(item["data_encerramento_proposta"])
+    assert prazo_retornado.tzinfo is not None
+    assert prazo_retornado == oportunidade["data_encerramento_proposta"]
     assert resposta["ultima_sincronizacao"] is not None
