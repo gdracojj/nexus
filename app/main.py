@@ -1,8 +1,6 @@
 import logging
-from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.staticfiles import StaticFiles
 
 from app.services.licitacao_service import consultar_licitacoes
 
@@ -45,13 +43,3 @@ def listar_licitacoes(uf: str, produto: str = ""):
         "total": len(resultados),
         "resultados": resultados,
     }
-
-
-app.mount(
-    "/",
-    StaticFiles(
-        directory=Path(__file__).resolve().parent.parent / "frontend",
-        html=True,
-    ),
-    name="frontend",
-)

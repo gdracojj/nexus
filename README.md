@@ -4,7 +4,7 @@
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.143.0-009688?logo=fastapi)
 
-O **NEXUS** consulta oportunidades publicadas no **Portal Nacional de Contratações Públicas (PNCP)** e permite filtrá-las por estado e termo do objeto. O projeto foi concebido a partir de necessidades operacionais da **RCCS Licitações** e também é um projeto de portfólio sobre integração com APIs externas e desenvolvimento backend.
+O **NEXUS** coleta oportunidades publicadas no **Portal Nacional de Contratações Públicas (PNCP)** e permite consultá-las por estado e termo do objeto através de uma API REST. A interface web não faz parte da aplicação atual. O projeto foi concebido a partir de necessidades operacionais da **RCCS Licitações** e também é um projeto de portfólio sobre integração com APIs externas e desenvolvimento backend.
 
 Além de sua aplicação prática no mercado, o NEXUS é um projeto de portfólio focado nas disciplinas de **Desenvolvimento Backend**, **Engenharia de Dados**, **Resiliência de Integração** e **Arquitetura de Software**.
 
@@ -23,7 +23,7 @@ O projeto tem dois objetivos de produto, em estágios diferentes:
 
 ## 🎯 Status Atual do Projeto
 
-O projeto oferece uma API FastAPI e um painel frontend inicial. O comando de coleta consulta o PNCP, percorre as páginas informadas pela API, normaliza os registros e grava ou atualiza os dados no PostgreSQL. A API e o frontend consultam os dados persistidos e filtram por UF e termo do objeto.
+O projeto oferece uma API FastAPI. O comando de coleta consulta o PNCP, percorre as páginas informadas pela API, normaliza os registros e grava ou atualiza os dados no PostgreSQL. A API consulta os dados persistidos e filtra por UF e termo do objeto.
 
 ---
 
@@ -32,7 +32,6 @@ O projeto oferece uma API FastAPI e um painel frontend inicial. O comando de col
 ### Implementadas
 * **Backend:** Python 3.10+, FastAPI e Uvicorn.
 * **Integração HTTP:** Requests para consultar o PNCP.
-* **Frontend:** HTML, CSS e JavaScript sem framework.
 * **Comunicação:** API HTTP com payloads JSON.
 * **Persistência:** PostgreSQL com SQLAlchemy e Alembic; contratações são deduplicadas pelo `numeroControlePNCP` do PNCP.
 
@@ -52,7 +51,7 @@ As dependências de execução estão declaradas em `requirements.txt`. A URL do
 O endpoint de leitura consulta somente os registros já persistidos no PostgreSQL. A coleta do PNCP é iniciada separadamente pelo comando `python -m app.cli coletar --uf RJ`; esse comando pode ser executado manualmente ou agendado pelo scheduler do sistema operacional.
 
 ```
-[ Usuário / Frontend ] ──▶ [ FastAPI ] ──▶ [ Repository ] ──▶ [ PostgreSQL ]
+[ Cliente HTTP ] ──▶ [ FastAPI ] ──▶ [ Repository ] ──▶ [ PostgreSQL ]
                                             ▲
 [ Scheduler / Operador ] ──▶ [ CLI ] ──▶ [ Serviço de Coleta ]
                                              │
@@ -110,7 +109,7 @@ nexus/
 │   │   └── licitacao_repository.py  # upsert e consultas persistidas
 │   ├── services/
 │   │   └── licitacao_service.py  # consulta persistida e serviço de coleta
-│   └── main.py               # Aplicação FastAPI, rota REST e montagem do frontend
+│   └── main.py               # Aplicação FastAPI e rota REST
 ├── tests/
 │   ├── test_api_route.py
 │   ├── test_cli.py
@@ -119,16 +118,6 @@ nexus/
 │   ├── test_pncp_parser.py
 │   ├── test_pncp_record_validation.py
 │   └── test_pncp_transient_retries.py
-├── frontend/
-│   ├── app.js
-│   ├── assets.js
-│   ├── index.html
-│   ├── style.css
-│   ├── variables.css
-│   └── assets/
-│       ├── favicon.png
-│       ├── nexus-mark.png
-│       └── nexus-wordmark.png
 ├── alembic/
 │   ├── env.py
 │   └── versions/
@@ -198,8 +187,8 @@ nexus/
    O mesmo comando pode ser agendado no cron, Windows Task Scheduler ou ferramenta operacional equivalente. Enquanto uma coleta estiver ativa, outra execução é recusada pelo lock PostgreSQL.
 
 8. **Acessar a aplicação:**
-   * **Interface Web (Frontend):** [http://127.0.0.1:8000](http://127.0.0.1:8000)
    * **Documentação Interativa (Swagger UI):** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+   * **OpenAPI:** [http://127.0.0.1:8000/openapi.json](http://127.0.0.1:8000/openapi.json)
 
 Para executar os testes use `python -m pytest -q`. Os testes de integração PostgreSQL são habilitados com `NEXUS_TEST_DATABASE_URL` apontando para um banco de testes descartável; eles criam e removem um schema `nexus_test_*` dentro dessa base.
 
@@ -273,7 +262,7 @@ O desenvolvimento do NEXUS é estruturado de forma iterativa e incremental:
   - [x] Integração funcional com a API do PNCP.
   - [x] Normalização de payload em DTOs internos (`parser.py`).
   - [x] Tentativas limitadas e espera exponencial para falhas transitórias do PNCP.
-  - [x] Endpoint FastAPI e Painel Frontend com estilização operacional.
+  - [x] Endpoint FastAPI com documentação OpenAPI.
 - [x] **Fase 2 — Implementação da persistência e migration inicial**
   - [x] Campos normalizados do endpoint PNCP, com payload original JSONB.
   - [x] Upsert idempotente pelo identificador estável `numeroControlePNCP`.
@@ -289,6 +278,7 @@ O desenvolvimento do NEXUS é estruturado de forma iterativa e incremental:
   - [ ] Controle automatizado de saldo de quantitativos, prazos de vigência e reajustes.
 - [ ] **Fase 5 — Observabilidade & Conteinerização**
   - [x] Testes unitários, de integração e do contrato HTTP com `pytest`.
+  - [x] Remoção da interface web não mantida da aplicação.
   - [ ] Conteinerização total da solução via `Docker` e `Docker Compose`.
   - [ ] Estruturação de dashboards analíticos e exploração de recursos de IA para leitura de editais.
 
@@ -297,6 +287,7 @@ O desenvolvimento do NEXUS é estruturado de forma iterativa e incremental:
 ## ⚠️ Limitações Conhecidas
 
 * **Coleta Síncrona Operacional:** o comando que coleta o PNCP permanece ativo durante paginação, tentativas e persistência, dentro do prazo configurado; a API de leitura não aguarda esse trabalho.
+* **Sem Interface Web:** o serviço expõe a API REST e o Swagger UI; não serve painel HTML/CSS/JavaScript.
 * **Filtros Textuais Básicos:** A filtragem por palavra-chave é puramente textual (case-insensitive), sem suporte a sinônimos ou busca semântica (planejada para etapas futuras).
 * **Ausência de Módulo Persistente Pós-Compra:** As telas de acompanhamento de atas e saldos encontram-se em fase de especificação e modelagem.
 

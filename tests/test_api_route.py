@@ -1,6 +1,3 @@
-import importlib
-from pathlib import Path
-
 import requests
 from fastapi.testclient import TestClient
 
@@ -120,20 +117,9 @@ def test_get_licitacoes_oculta_detalhes_de_falha_interna(monkeypatch, caplog):
     assert "RuntimeError" in caplog.text
 
 
-def test_aplicacao_monta_arquivos_estaticos_fora_da_raiz_do_repositorio(
-    monkeypatch,
-    tmp_path,
-):
-    monkeypatch.chdir(tmp_path)
-    modulo = importlib.reload(main)
-    rota_frontend = next(
-        rota for rota in modulo.app.routes if getattr(rota, "name", None) == "frontend"
-    )
-
-    frontend = Path(rota_frontend.app.directory).resolve()
-    assert frontend == Path(__file__).resolve().parents[1] / "frontend"
-    assert (frontend / "index.html").is_file()
-    with TestClient(modulo.app) as cliente:
+def test_aplicacao_expoe_api_sem_servir_frontend():
+    with TestClient(main.app) as cliente:
         resposta = cliente.get("/")
-    assert resposta.status_code == 200
-    assert "NEXUS" in resposta.text
+
+    assert resposta.status_code == 404
+    assert resposta.json() == {"detail": "Not Found"}
