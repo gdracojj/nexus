@@ -116,7 +116,7 @@ button, input, select { font: inherit; }
   letter-spacing: 0.025em;
   text-decoration: none;
 }
-.logo { width: 24px; height: 24px; }
+.logo { display: block; width: 116px; height: 38px; object-fit: contain; }
 .main-nav { display: flex; align-items: center; gap: 4px; }
 .main-nav a, .nav-off {
   display: inline-flex;
@@ -321,6 +321,7 @@ dd { margin: 0; color: var(--text-secondary); overflow-wrap: anywhere; }
 @media (max-width: 760px) {
   .topbar-inner { width: min(100% - 32px, var(--page-width)); min-height: 58px; flex-wrap: wrap; gap: 8px 16px; padding: 10px 0; }
   .brand { margin-right: auto; }
+  .logo { width: 108px; height: 35px; }
   .main-nav { order: 3; width: 100%; }
   .main-nav a, .nav-off { padding: 7px 9px; }
   .top-actions { margin-left: 0; }

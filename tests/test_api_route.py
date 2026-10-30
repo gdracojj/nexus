@@ -129,10 +129,16 @@ def test_aplicacao_serve_frontend_e_assets_estaticos():
         app_js = cliente.get("/app.js")
         api_js = cliente.get("/api.js")
         estilos = cliente.get("/nexus.css")
+        logo = cliente.get("/assets/nexus-logo.png")
+        favicon = cliente.get("/assets/favicon.png")
 
     assert pagina.status_code == 200
     assert 'src="app.js"' in pagina.text
     assert app_js.status_code == api_js.status_code == estilos.status_code == 200
+    assert logo.status_code == favicon.status_code == 200
+    assert logo.headers["content-type"] == favicon.headers["content-type"] == "image/png"
+    assert 'href="assets/favicon.png"' in pagina.text
+    assert 'src="assets/nexus-logo.png"' in pagina.text
     assert app_js.headers["content-type"].startswith("text/javascript")
     assert "Consultando a base do NEXUS" in app_js.text
 
