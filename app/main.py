@@ -1,9 +1,11 @@
+import logging
+
 from fastapi import FastAPI, HTTPException
-import requests
 
-from app.services.licitacao_service import buscar_e_filtrar_licitacoes
+from app.services.licitacao_service import consultar_licitacoes
 
 
+logger = logging.getLogger(__name__)
 app = FastAPI(title="NEXUS")
 
 
@@ -20,21 +22,14 @@ def listar_licitacoes(uf: str, produto: str = ""):
         )
 
     try:
-        dados, resultados = buscar_e_filtrar_licitacoes(
+        total_consultado, resultados = consultar_licitacoes(
             estado=uf,
             produto=produto,
         )
 
-    except requests.exceptions.RequestException as erro:
-        print(f"ERRO PNCP: {erro}")
-
-        raise HTTPException(
-            status_code=502,
-            detail="Não foi possível consultar o PNCP. Tente novamente mais tarde.",
-        ) from erro
-
     except Exception as erro:
-        print(f"ERRO INTERNO: {erro}")
+        # A mensagem da exceção pode conter DSNs ou outros dados operacionais.
+        logger.error("Falha na consulta persistida (tipo=%s).", type(erro).__name__)
 
         raise HTTPException(
             status_code=500,
@@ -44,7 +39,7 @@ def listar_licitacoes(uf: str, produto: str = ""):
     return {
         "uf": uf,
         "produto": produto,
-        "total_consultado": len(dados),
+        "total_consultado": total_consultado,
         "total": len(resultados),
         "resultados": resultados,
     }
