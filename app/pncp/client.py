@@ -170,15 +170,25 @@ def buscar_licitacoes(
     parametros_base=None,
     ao_receber_registros=None,
     ao_consultar_pagina=None,
+    ao_processar_pagina=None,
+    pagina_inicial: int = 1,
 ):
     prazo_final = time.monotonic() + PRAZO_TOTAL_CONSULTA_SEGUNDOS
     limite_paginas = _limite_paginas_consulta(estado)
 
+    if (
+        isinstance(pagina_inicial, bool)
+        or not isinstance(pagina_inicial, int)
+        or pagina_inicial < 1
+    ):
+        raise ValueError("pagina_inicial deve ser um inteiro maior ou igual a 1.")
+
     if parametros_base is None:
         parametros_base = parametros_consulta(estado)
 
-    pagina = 1
-    todas_licitacoes = []
+    pagina = pagina_inicial
+    licitacoes_normalizadas = []
+    registros_recebidos = 0
 
     while True:
         _verificar_prazo(prazo_final)
@@ -223,15 +233,43 @@ def buscar_licitacoes(
                 "PNCP retornou registros com total de páginas igual a zero."
             )
 
-        todas_licitacoes.extend(licitacoes_pagina)
+        pagina_normalizada = []
+        recebidos_nesta_pagina = len(licitacoes_pagina)
+        registros_recebidos += recebidos_nesta_pagina
+        for indice, licitacao in enumerate(licitacoes_pagina, start=1):
+            _verificar_prazo(prazo_final)
+            try:
+                if incluir_payload:
+                    pagina_normalizada.append(registro_para_persistencia(licitacao))
+                else:
+                    pagina_normalizada.append(normalizar_licitacao(licitacao))
+            except RegistroPNCPInvalidoError as erro:
+                falha = requests.exceptions.RequestException(
+                    f"PNCP retornou registro inválido na página {pagina}, "
+                    f"posição {indice}: {erro}"
+                )
+                falha.registros_recebidos = registros_recebidos
+                falha.registros_com_erro = 1
+                raise falha from erro
+
+        if ao_processar_pagina is not None:
+            ao_processar_pagina(
+                pagina,
+                total_paginas,
+                pagina_normalizada,
+                recebidos_nesta_pagina,
+            )
+        else:
+            licitacoes_normalizadas.extend(pagina_normalizada)
+
         if ao_receber_registros is not None:
-            ao_receber_registros(len(licitacoes_pagina))
+            ao_receber_registros(recebidos_nesta_pagina)
         if ao_consultar_pagina is not None:
-            ao_consultar_pagina(pagina, len(licitacoes_pagina))
+            ao_consultar_pagina(pagina, recebidos_nesta_pagina)
 
         print(
             f"PNCP: página {pagina}/{total_paginas} "
-            f"- {len(licitacoes_pagina)} registros"
+            f"- {recebidos_nesta_pagina} registros"
         )
 
         if pagina >= total_paginas:
@@ -240,22 +278,5 @@ def buscar_licitacoes(
         pagina += 1
 
         _aguardar_com_prazo(INTERVALO_ENTRE_PAGINAS, prazo_final)
-
-    licitacoes_normalizadas = []
-    for indice, licitacao in enumerate(todas_licitacoes, start=1):
-        _verificar_prazo(prazo_final)
-        try:
-            if incluir_payload:
-                licitacoes_normalizadas.append(registro_para_persistencia(licitacao))
-            else:
-                licitacoes_normalizadas.append(normalizar_licitacao(licitacao))
-        except RegistroPNCPInvalidoError as erro:
-            falha = requests.exceptions.RequestException(
-                f"PNCP retornou registro inválido na posição {indice}: {erro}"
-            )
-            falha.registros_recebidos = len(todas_licitacoes)
-            falha.registros_com_erro = 1
-            raise falha from erro
-
     _verificar_prazo(prazo_final)
     return licitacoes_normalizadas

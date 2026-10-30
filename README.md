@@ -76,7 +76,9 @@ A aplicação consome o seguinte endpoint oficial do PNCP:
 `https://pncp.gov.br/api/consulta/v1/contratacoes/proposta`
 
 ### Paginação e limite de taxa
-O cliente percorre as páginas usando o campo `totalPaginas` retornado pelo PNCP e agrega os registros antes de normalizá-los. Cada consulta aceita no máximo 110 páginas; para SP, o limite é 160. O prazo de 300 segundos é compartilhado entre todas as páginas, tentativas, esperas e normalização dos registros.
+O cliente percorre as páginas usando `totalPaginas`, normaliza uma página por vez e persiste cada página com seu checkpoint na mesma transação. O limite é de 110 páginas por consulta, exceto SP, que aceita até 160; o prazo total de cada execução é 300 segundos.
+
+Se a coleta falhar depois de confirmar páginas, a execução fica `parcial`, os registros confirmados permanecem consultáveis e uma nova execução com os mesmos parâmetros retoma da página seguinte. A chave `numeroControlePNCP` mantém os upserts idempotentes. A API informa o status da execução mais recente e o painel avisa quando os dados podem estar incompletos. O progresso é confirmado por página; a retomada não representa um snapshot imutável do PNCP, cuja paginação pode mudar entre execuções.
 
 ### Camada Inicial de Resiliência Implementada
 O comportamento implementado em `app/pncp/client.py` é:
@@ -202,7 +204,7 @@ Para executar os testes use `python -m pytest -q`. Os testes de integração Pos
 
 ### Persistência PNCP
 
-`licitacoes.numero_controle_pncp` usa o `numeroControlePNCP` do PNCP como chave externa única. A tabela `pncp_payloads` mantém um único snapshot JSONB por contratação: o SHA-256 evita regravar cópias idênticas e o snapshot é substituído quando o conteúdo muda. `coletada_em` registra a primeira coleta conhecida pelo NEXUS e permanece inalterado em upserts posteriores; `atualizada_em` registra a sincronização mais recente; `data_publicacao` é a data de publicação informada pelo PNCP. A migration inicial já tinha os dois campos de coleta/atualização, portanto essa correção não requer migration nem inventa datas para registros existentes. Para dados anteriores à correção, `coletada_em` pode representar uma sincronização posterior à descoberta original, e esse histórico não pode ser reconstruído com segurança. O histórico das execuções fica em `sync_execucoes`; os upserts de licitações e payloads são enviados em lotes de até 250 chaves, e os lotes e a conclusão da execução são confirmados na mesma transação. Falhas de ingestão são registradas em transação separada, quando o banco continua acessível.
+`licitacoes.numero_controle_pncp` usa o `numeroControlePNCP` do PNCP como chave externa única. A tabela `pncp_payloads` mantém um único snapshot JSONB por contratação: o SHA-256 evita regravar cópias idênticas e o snapshot é substituído quando o conteúdo muda. `coletada_em` registra a primeira coleta conhecida pelo NEXUS e permanece inalterado em upserts posteriores; `atualizada_em` registra a sincronização mais recente; `data_publicacao` é a data de publicação informada pelo PNCP. O histórico fica em `sync_execucoes`. Cada página, seus upserts e o checkpoint correspondente são confirmados na mesma transação. Uma falha depois de páginas confirmadas registra a execução como `parcial`, preserva os registros e permite retomar da próxima página. Não há migration adicional: o status `parcial` já existe no schema.
 
 O mapeamento usa o resumo do endpoint de propostas abertas e os campos documentados pelo [Swagger da API de Consulta do PNCP](https://pncp.gov.br/api/consulta/swagger-ui/index.html) e pelo [manual oficial de integração](https://pncp.gov.br/manual/pt-br/latest/singlehtml/index.html). Datas sem fuso explícito são interpretadas no horário de Brasília; valores monetários são persistidos como `NUMERIC(20,4)`.
 
@@ -244,6 +246,13 @@ curl -X GET "http://127.0.0.1:8000/api/licitacoes?uf=RJ&produto=material&page=1&
   "page_size": 25,
   "total_pages": 1,
   "ultima_sincronizacao": "2026-10-30T12:00:00+00:00",
+  "ultima_execucao": {
+    "status": "concluida",
+    "iniciada_em": "2026-10-30T11:59:00+00:00",
+    "finalizada_em": "2026-10-30T12:00:00+00:00",
+    "paginas_consultadas": 1,
+    "registros_processados": 10
+  },
   "resultados": [
     {
       "numero_controle_pncp": "12345678000199-1-000001/2026",
@@ -262,7 +271,7 @@ curl -X GET "http://127.0.0.1:8000/api/licitacoes?uf=RJ&produto=material&page=1&
 }
 ```
 
-`total_consultado` conta os registros da UF e do período antes do filtro `produto`; sem `prazo_dias`, inclui oportunidades vigentes e registros sem prazo, e com `prazo_dias` inclui somente oportunidades dentro desse intervalo. `total` conta todos os registros correspondentes aos filtros, independentemente da página atual. `page` informa a página devolvida, `page_size` o limite solicitado e `total_pages` o total de páginas (zero quando não há resultados). A ordenação é por prazo de encerramento crescente e número da contratação. Se `uf` for omitida, a consulta considera todas as UFs. `ultima_sincronizacao` informa a conclusão mais recente de uma sincronização bem-sucedida. A rota também pode responder:
+`total_consultado` conta os registros da UF e do período antes do filtro `produto`; sem `prazo_dias`, inclui oportunidades vigentes e registros sem prazo, e com `prazo_dias` inclui somente oportunidades dentro desse intervalo. `total` conta todos os registros correspondentes aos filtros, independentemente da página atual. `page` informa a página devolvida, `page_size` o limite solicitado e `total_pages` o total de páginas (zero quando não há resultados). A ordenação é por prazo de encerramento crescente e número da contratação. Se `uf` for omitida, a consulta considera todas as UFs. `ultima_sincronizacao` informa a conclusão mais recente de uma sincronização bem-sucedida; `ultima_execucao` descreve a tentativa mais recente para a UF consultada, inclusive `executando`, `parcial` ou `falhou`, com seu progresso. A rota também pode responder:
 
 | Status | Situação | Corpo |
 | :--- | :--- | :--- |

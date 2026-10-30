@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, event, select, text
+from sqlalchemy import create_engine, event, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
@@ -34,7 +34,10 @@ def banco_postgres(monkeypatch):
         scoped_url = make_url(url).update_query_dict(
             {"options": f"-csearch_path={schema}"}
         )
-        monkeypatch.setenv("DATABASE_URL", str(scoped_url))
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            scoped_url.render_as_string(hide_password=False),
+        )
         engine = create_engine(scoped_url)
         alembic_config = Config("alembic.ini")
         command.upgrade(alembic_config, "head")
@@ -139,13 +142,91 @@ def test_falha_de_transacao_nao_deixa_licitacao_parcial(banco_postgres):
         assert execucao.resumo_falhas == {"tipo": "ValueError"}
 
 
+def test_persistencia_por_pagina_preserva_checkpoint_e_retomada(banco_postgres):
+    parametros = {"uf": "RS", "dataInicial": "20261028"}
+    execucao_id = repositorio.iniciar_execucao(parametros)
+    primeira = registro("Compra da página 1")
+    repositorio.persistir_pagina_execucao(execucao_id, 1, [primeira], 1)
+
+    with sessionmaker(bind=banco_postgres)() as sessao:
+        execucao = sessao.get(models.SyncExecucao, execucao_id)
+        assert (
+            execucao.status,
+            execucao.paginas_consultadas,
+            execucao.registros_recebidos,
+            execucao.registros_processados,
+        ) == ("executando", 1, 1, 1)
+        assert sessao.scalar(select(models.Licitacao.id)) is not None
+
+    checkpoint = repositorio.obter_execucao_incompleta(parametros)
+    assert checkpoint == {
+        "id": execucao_id,
+        "pagina_seguinte": 2,
+        "registros_processados": 1,
+    }
+
+    repositorio.falhar_execucao(execucao_id, TimeoutError("timeout externo"))
+    with sessionmaker(bind=banco_postgres)() as sessao:
+        execucao = sessao.get(models.SyncExecucao, execucao_id)
+        assert execucao.status == "parcial"
+        assert execucao.registros_processados == 1
+        assert sessao.scalar(select(models.Licitacao.id)) is not None
+
+    repositorio.retomar_execucao(execucao_id)
+    segunda = registro("Compra da página 2")
+    segunda["numero_controle_pncp"] = "12345678000199-1-000002/2026"
+    segunda["payload"]["numeroControlePNCP"] = segunda["numero_controle_pncp"]
+    repositorio.persistir_pagina_execucao(
+        execucao_id,
+        2,
+        [primeira, segunda],
+        2,
+    )
+
+    assert repositorio.concluir_execucao_incremental(execucao_id) == 2
+    with sessionmaker(bind=banco_postgres)() as sessao:
+        execucao = sessao.get(models.SyncExecucao, execucao_id)
+        assert (
+            execucao.status,
+            execucao.paginas_consultadas,
+            execucao.registros_recebidos,
+            execucao.registros_processados,
+        ) == ("concluida", 2, 3, 2)
+        assert sessao.scalar(select(func.count()).select_from(models.Licitacao)) == 2
+
+
+def test_erro_apos_pagina_gravada_fica_parcial_e_consulta_expoe_status(
+    banco_postgres,
+):
+    parametros = {"uf": "RS", "dataInicial": "20261028"}
+    execucao_id = repositorio.iniciar_execucao(parametros)
+    oportunidade = registro()
+    oportunidade["uf"] = "RS"
+    repositorio.persistir_pagina_execucao(execucao_id, 1, [oportunidade], 1)
+    repositorio.falhar_execucao(execucao_id, TimeoutError("timeout externo"))
+
+    _, _, encontrados, ultima_sincronizacao, ultima_execucao = (
+        repositorio.consultar_licitacoes("RS")
+    )
+
+    assert len(encontrados) == 1
+    assert ultima_sincronizacao is None
+    assert ultima_execucao["status"] == "parcial"
+    assert ultima_execucao["paginas_consultadas"] == 1
+    assert ultima_execucao["registros_processados"] == 1
+
+
 def test_repositorio_filtra_com_texto_insensivel_a_caixa(banco_postgres):
     execucao_id = repositorio.iniciar_execucao({"uf": "SP"})
     repositorio.concluir_execucao(execucao_id, [registro()])
 
-    total_consultado, total, encontrados, ultima_sincronizacao = repositorio.consultar_licitacoes(
-        "SP", "MATERIAL"
-    )
+    (
+        total_consultado,
+        total,
+        encontrados,
+        ultima_sincronizacao,
+        ultima_execucao,
+    ) = repositorio.consultar_licitacoes("SP", "MATERIAL")
     assert total_consultado == total == 1
     assert len(encontrados) == 1
     assert encontrados[0]["descricao"] == "Compra de material"
@@ -154,6 +235,7 @@ def test_repositorio_filtra_com_texto_insensivel_a_caixa(banco_postgres):
     assert encontrados[0]["orgao"] == "Órgão de teste"
     assert encontrados[0]["codigo_modalidade"] == 6
     assert ultima_sincronizacao is not None
+    assert ultima_execucao["status"] == "concluida"
 
 
 def test_consulta_persistida_aplica_paginacao_e_preserva_total_filtrado(
@@ -172,7 +254,7 @@ def test_consulta_persistida_aplica_paginacao_e_preserva_total_filtrado(
         registros.append(item)
     repositorio.concluir_execucao(execucao_id, registros)
 
-    total_consultado, total, encontrados, _ultima_sincronizacao = (
+    total_consultado, total, encontrados, _ultima_sincronizacao, _ultima_execucao = (
         repositorio.consultar_licitacoes(
             "SP", "material", page=2, page_size=1
         )
@@ -202,7 +284,7 @@ def test_consulta_persistida_filtra_prazo_antes_da_paginacao(banco_postgres):
         execucao_id, [registro_proximo, registro_distante]
     )
 
-    total_consultado, total, encontrados, _ultima_sincronizacao = (
+    total_consultado, total, encontrados, _ultima_sincronizacao, _ultima_execucao = (
         repositorio.consultar_licitacoes("SP", prazo_dias=1)
     )
 
@@ -272,7 +354,7 @@ def test_consulta_persistida_omite_oportunidades_com_prazo_encerrado(banco_postg
     oportunidade["data_encerramento_proposta"] = datetime.now(timezone.utc) - timedelta(days=1)
     repositorio.concluir_execucao(execucao_id, [oportunidade])
 
-    total_consultado, total, encontrados, _ultima_sincronizacao = (
+    total_consultado, total, encontrados, _ultima_sincronizacao, _ultima_execucao = (
         repositorio.consultar_licitacoes("SP")
     )
 
@@ -294,7 +376,7 @@ def test_consulta_persistida_sem_uf_retorna_todas_as_unidades_federativas(
     rio_de_janeiro["payload"]["unidadeOrgao"]["ufSigla"] = "RJ"
     repositorio.concluir_execucao(execucao_id, [sao_paulo, rio_de_janeiro])
 
-    total_consultado, total, encontrados, _ultima_sincronizacao = (
+    total_consultado, total, encontrados, _ultima_sincronizacao, _ultima_execucao = (
         repositorio.consultar_licitacoes(None)
     )
 
@@ -373,3 +455,4 @@ def test_endpoint_consulta_registros_persistidos_sem_iniciar_coleta(banco_postgr
     assert prazo_retornado.tzinfo is not None
     assert prazo_retornado == oportunidade["data_encerramento_proposta"]
     assert resposta["ultima_sincronizacao"] is not None
+    assert resposta["ultima_execucao"]["status"] == "concluida"
