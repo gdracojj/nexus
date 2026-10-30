@@ -234,23 +234,24 @@ def falhar_execucao(
 
 
 def consultar_licitacoes(
-    uf: str,
+    uf: str | None,
     produto: str = "",
-) -> tuple[int, list[dict]]:
+) -> tuple[int, list[dict], str | None]:
     """Consulta os registros persistidos sem acessar o PNCP."""
     from sqlalchemy import func, or_, select
 
-    from app.database.models import Licitacao
+    from app.database.models import Licitacao, SyncExecucao
 
     with obter_session_factory()() as sessao:
         agora = datetime.now(timezone.utc)
-        filtros = (
-            Licitacao.uf == uf,
+        filtros = [
             or_(
                 Licitacao.data_encerramento_proposta.is_(None),
                 Licitacao.data_encerramento_proposta >= agora,
             ),
-        )
+        ]
+        if uf is not None:
+            filtros.append(Licitacao.uf == uf)
         total_consultado = sessao.scalar(
             select(func.count()).select_from(Licitacao).where(*filtros)
         )
@@ -266,16 +267,31 @@ def consultar_licitacoes(
                 Licitacao.numero,
             )
         ).all()
-        return total_consultado, [_formatar_licitacao(registro) for registro in registros]
+        ultima_sincronizacao = sessao.scalar(
+            select(func.max(SyncExecucao.finalizada_em)).where(
+                SyncExecucao.status == "concluida"
+            )
+        )
+        return (
+            total_consultado,
+            [_formatar_licitacao(registro) for registro in registros],
+            ultima_sincronizacao.isoformat() if ultima_sincronizacao else None,
+        )
 
 
 def _formatar_licitacao(registro) -> dict:
     return {
+        "numero_controle_pncp": registro.numero_controle_pncp,
         "numero": registro.numero,
         "descricao": registro.descricao,
         "codigo_unidade": registro.codigo_unidade,
+        "unidade": registro.codigo_unidade,
+        "orgao": registro.nome_orgao,
+        "codigo_modalidade": registro.codigo_modalidade,
         "municipio": registro.municipio,
         "uf": registro.uf,
+        "valor_estimado": registro.valor_estimado,
+        "situacao": registro.situacao,
         "data_encerramento_proposta": (
             registro.data_encerramento_proposta.isoformat()
             if registro.data_encerramento_proposta else None

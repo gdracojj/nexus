@@ -143,11 +143,17 @@ def test_repositorio_filtra_com_texto_insensivel_a_caixa(banco_postgres):
     execucao_id = repositorio.iniciar_execucao({"uf": "SP"})
     repositorio.concluir_execucao(execucao_id, [registro()])
 
-    total, encontrados = repositorio.consultar_licitacoes("SP", "MATERIAL")
+    total, encontrados, ultima_sincronizacao = repositorio.consultar_licitacoes(
+        "SP", "MATERIAL"
+    )
     assert total == 1
     assert len(encontrados) == 1
     assert encontrados[0]["descricao"] == "Compra de material"
     assert encontrados[0]["uf"] == "SP"
+    assert encontrados[0]["numero_controle_pncp"] == "12345678000199-1-000001/2026"
+    assert encontrados[0]["orgao"] == "Órgão de teste"
+    assert encontrados[0]["codigo_modalidade"] == 6
+    assert ultima_sincronizacao is not None
 
 
 def test_upsert_preserva_data_da_primeira_coleta(banco_postgres):
@@ -212,10 +218,30 @@ def test_consulta_persistida_omite_oportunidades_com_prazo_encerrado(banco_postg
     oportunidade["data_encerramento_proposta"] = datetime.now(timezone.utc) - timedelta(days=1)
     repositorio.concluir_execucao(execucao_id, [oportunidade])
 
-    total, encontrados = repositorio.consultar_licitacoes("SP")
+    total, encontrados, _ultima_sincronizacao = repositorio.consultar_licitacoes("SP")
 
     assert total == 0
     assert encontrados == []
+
+
+def test_consulta_persistida_sem_uf_retorna_todas_as_unidades_federativas(
+    banco_postgres,
+):
+    execucao_id = repositorio.iniciar_execucao({"uf": "todas"})
+    sao_paulo = registro()
+    rio_de_janeiro = registro("Compra de equipamento")
+    rio_de_janeiro["numero_controle_pncp"] = "12345678000199-1-000002/2026"
+    rio_de_janeiro["uf"] = "RJ"
+    rio_de_janeiro["payload"]["numeroControlePNCP"] = rio_de_janeiro[
+        "numero_controle_pncp"
+    ]
+    rio_de_janeiro["payload"]["unidadeOrgao"]["ufSigla"] = "RJ"
+    repositorio.concluir_execucao(execucao_id, [sao_paulo, rio_de_janeiro])
+
+    total, encontrados, _ultima_sincronizacao = repositorio.consultar_licitacoes(None)
+
+    assert total == 2
+    assert {item["uf"] for item in encontrados} == {"SP", "RJ"}
 
 
 def test_lock_global_impede_duas_coletas_simultaneas(banco_postgres):
@@ -273,15 +299,17 @@ def test_endpoint_consulta_registros_persistidos_sem_iniciar_coleta(banco_postgr
 
     assert resposta["total_consultado"] == 1
     assert resposta["total"] == 1
-    assert resposta["resultados"] == [
-        {
-            "numero": "1/2026",
-            "descricao": "Compra de material",
-            "codigo_unidade": "1",
-            "municipio": "São Paulo",
-            "uf": "SP",
-            "data_encerramento_proposta": oportunidade[
-                "data_encerramento_proposta"
-            ].isoformat(),
-        }
-    ]
+    item = resposta["resultados"][0]
+    assert item["numero"] == "1/2026"
+    assert item["numero_controle_pncp"] == "12345678000199-1-000001/2026"
+    assert item["descricao"] == "Compra de material"
+    assert item["orgao"] == "Órgão de teste"
+    assert item["unidade"] == "1"
+    assert item["valor_estimado"] == oportunidade["valor_estimado"]
+    assert item["codigo_modalidade"] == 6
+    assert item["municipio"] == "São Paulo"
+    assert item["uf"] == "SP"
+    assert item["data_encerramento_proposta"] == oportunidade[
+        "data_encerramento_proposta"
+    ].isoformat()
+    assert resposta["ultima_sincronizacao"] is not None
