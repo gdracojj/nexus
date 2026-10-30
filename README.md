@@ -220,13 +220,13 @@ Consulta oportunidades vigentes já persistidas no PostgreSQL (ou registros sem 
 #### Parâmetros da Requisição (Query Params)
 | Parâmetro | Tipo | Obrigatório | Descrição |
 | :--- | :--- | :--- | :--- |
-| `uf` | `string` | Não | Sigla da Unidade Federativa com 2 caracteres (Ex: `RJ`, `SP`). Se omitida, consulta todas as UFs. |
-| `produto` | `string` | Não | Termo opcional para busca sem distinção entre maiúsculas e minúsculas na descrição/objeto. O padrão é vazio. |
+| `uf` | `string` | Não | Sigla oficial da Unidade Federativa (Ex: `RJ`, `SP`). Se omitida, consulta todas as UFs. |
+| `produto` | `string` | Não | Termo opcional de até 100 caracteres para busca sem distinção entre maiúsculas e minúsculas na descrição/objeto. O padrão é vazio. |
 | `page` | `integer` | Não | Página baseada em 1. Padrão `1`; intervalo permitido de `1` a `10000`. |
 | `page_size` | `integer` | Não | Quantidade máxima de registros por resposta. Padrão `25`; intervalo permitido de `1` a `100`. |
 | `prazo_dias` | `integer` | Não | Limita oportunidades aos próximos dias, a partir do momento da consulta. Aceita de `1` a `30`; sem o parâmetro, inclui todos os prazos vigentes e os registros sem prazo. |
 
-`uf`, quando informado, é removido de espaços nas extremidades e convertido para maiúsculas. A rota verifica se possui exatamente dois caracteres; não valida se esses caracteres correspondem a uma UF oficial. O termo `produto` é removido de espaços nas extremidades e convertido para minúsculas.
+`uf`, quando informado, é removido de espaços nas extremidades, convertido para maiúsculas e validado contra as siglas oficiais das UFs brasileiras. O termo `produto` é removido de espaços nas extremidades e convertido para minúsculas; a API limita o valor recebido a 100 caracteres.
 
 #### Exemplo de Chamada
 ```bash
@@ -266,8 +266,8 @@ curl -X GET "http://127.0.0.1:8000/api/licitacoes?uf=RJ&produto=material&page=1&
 
 | Status | Situação | Corpo |
 | :--- | :--- | :--- |
-| `400` | `uf` com comprimento diferente de 2 | `{"detail":"Informe a sigla do estado com 2 letras."}` |
-| `422` | Tipos inválidos, `page` fora de `1–10000`, `page_size` fora de `1–100` ou `prazo_dias` fora de `1–30` | Corpo de validação do FastAPI |
+| `400` | `uf` não corresponde a uma sigla oficial | `{"detail":"Informe uma sigla de UF válida."}` |
+| `422` | Tipos inválidos, `produto` acima de 100 caracteres, `page` fora de `1–10000`, `page_size` fora de `1–100` ou `prazo_dias` fora de `1–30` | Corpo de validação do FastAPI |
 | `500` | Falha inesperada ao consultar o PostgreSQL ou erro interno | `{"detail":"Erro interno ao processar a consulta."}` |
 
 Falhas do PNCP ocorrem no comando de coleta, que termina com código diferente de zero; não alteram o status HTTP das consultas aos dados já persistidos. As mensagens públicas de erro `500` são genéricas e não incluem detalhes técnicos.

@@ -149,13 +149,29 @@ def test_get_licitacoes_valida_parametro_uf(monkeypatch):
 
     with TestClient(main.app) as cliente:
         sem_uf = cliente.get("/api/licitacoes")
-        uf_invalida = cliente.get("/api/licitacoes", params={"uf": "R"})
+        uf_curta = cliente.get("/api/licitacoes", params={"uf": "R"})
+        uf_desconhecida = cliente.get("/api/licitacoes", params={"uf": "ZZ"})
 
     assert sem_uf.status_code == 200
-    assert uf_invalida.status_code == 400
-    assert uf_invalida.json() == {
-        "detail": "Informe a sigla do estado com 2 letras."
+    assert uf_curta.status_code == uf_desconhecida.status_code == 400
+    assert uf_curta.json() == uf_desconhecida.json() == {
+        "detail": "Informe uma sigla de UF válida."
     }
+
+
+def test_get_licitacoes_rejeita_produto_acima_de_cem_caracteres(monkeypatch):
+    chamadas = []
+    monkeypatch.setattr(
+        licitacao_repository,
+        "consultar_licitacoes",
+        lambda *_args, **_kwargs: chamadas.append(1) or (0, 0, [], None),
+    )
+
+    with TestClient(main.app) as cliente:
+        resposta = cliente.get("/api/licitacoes", params={"produto": "x" * 101})
+
+    assert resposta.status_code == 422
+    assert chamadas == []
 
 
 def test_get_licitacoes_oculta_detalhes_de_falha_interna(monkeypatch, caplog):
