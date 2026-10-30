@@ -35,6 +35,7 @@ def listar_licitacoes(
             total,
             resultados,
             ultima_sincronizacao,
+            ultima_execucao,
         ) = consultar_licitacoes(
             estado=uf,
             produto=produto,
@@ -62,6 +63,7 @@ def listar_licitacoes(
         "total_pages": (total + page_size - 1) // page_size,
         "resultados": resultados,
         "ultima_sincronizacao": ultima_sincronizacao,
+        "ultima_execucao": ultima_execucao,
     }
 
 
