@@ -320,6 +320,12 @@ O desenvolvimento do NEXUS é estruturado de forma iterativa e incremental:
 * **Filtros Textuais Básicos:** A filtragem por palavra-chave é puramente textual (case-insensitive), sem suporte a sinônimos ou busca semântica (planejada para etapas futuras).
 * **Ausência de Módulo Persistente Pós-Compra:** As telas de acompanhamento de atas e saldos encontram-se em fase de especificação e modelagem.
 
+## Segurança HTTP
+
+A aplicação envia uma Content Security Policy que restringe scripts, imagens e conexões à mesma origem, permitindo a folha e as fontes do Google Fonts usadas pela interface. A política bloqueia objetos incorporados e enquadramento da página; atributos `style` inline permanecem permitidos para a largura calculada das barras do painel. Os caminhos da interface Swagger/ReDoc (`/docs`, `/redoc` e `/docs/oauth2-redirect`) recebem os demais headers, mas não a CSP, pois o Swagger UI padrão carrega código inline e recursos de CDN. As respostas também incluem `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` e uma `Permissions-Policy` que desativa câmera, microfone e geolocalização. HSTS não é enviado pela aplicação porque a terminação TLS depende do ambiente de implantação.
+
+O GitHub Actions executa auditoria das dependências Python declaradas em `requirements-test.txt` usando `pip-audit`. A auditoria identifica versões com vulnerabilidades conhecidas; atualizações continuam sendo avaliadas e realizadas por alterações revisadas.
+
 ---
 
 ## 📄 Licença

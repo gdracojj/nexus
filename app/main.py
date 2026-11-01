@@ -11,6 +11,34 @@ from app.services.licitacao_service import consultar_licitacoes
 logger = logging.getLogger(__name__)
 app = FastAPI(title="NEXUS")
 
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "base-uri 'self'; "
+    "object-src 'none'; "
+    "frame-ancestors 'none'; "
+    "form-action 'self'; "
+    "script-src 'self'; "
+    "style-src-elem 'self' https://fonts.googleapis.com; "
+    "style-src-attr 'unsafe-inline'; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "img-src 'self'; "
+    "connect-src 'self'"
+)
+
+
+@app.middleware("http")
+async def aplicar_headers_seguranca(request, call_next):
+    resposta = await call_next(request)
+    if request.url.path not in {"/docs", "/redoc", "/docs/oauth2-redirect"}:
+        resposta.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+    resposta.headers["X-Content-Type-Options"] = "nosniff"
+    resposta.headers["X-Frame-Options"] = "DENY"
+    resposta.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    resposta.headers["Permissions-Policy"] = (
+        "camera=(), microphone=(), geolocation=()"
+    )
+    return resposta
+
 
 @app.get("/api/licitacoes")
 def listar_licitacoes(
