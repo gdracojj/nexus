@@ -25,6 +25,8 @@ O projeto tem dois objetivos de produto, em estágios diferentes:
 
 O projeto oferece uma API FastAPI e um painel web sem framework JavaScript. O comando de coleta consulta o PNCP, percorre as páginas informadas pela API, normaliza os registros e grava ou atualiza os dados no PostgreSQL. A API consulta os dados persistidos; o painel apresenta prazos em visões geral, timeline e quadro.
 
+Para a descrição detalhada do fluxo, responsabilidades das camadas, justificativa das tecnologias, segurança, testes, medições e lacunas conhecidas, consulte a [auditoria técnica completa](docs/auditoria-tecnica-nexus.md).
+
 ---
 
 ## 🛠️ Tecnologias Utilizadas e Planejadas
