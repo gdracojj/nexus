@@ -143,6 +143,7 @@ def test_get_licitacoes_nao_consulta_pncp_e_funciona_se_pncp_estiver_indisponive
             1,
             [{"numero": "2/2026", "descricao": "Registro salvo"}],
             "2026-10-30T12:00:00+00:00",
+                None,
         ),
     )
 
@@ -222,6 +223,36 @@ def test_aplicacao_serve_frontend_e_assets_estaticos():
     assert 'src="assets/nexus-logo.png"' in pagina.text
     assert app_js.headers["content-type"].startswith("text/javascript")
     assert "Consultando a base do NEXUS" in app_js.text
+
+
+def test_respostas_api_e_estaticas_incluem_headers_de_seguranca():
+    with TestClient(main.app) as cliente:
+        pagina = cliente.get("/")
+        asset = cliente.get("/app.js")
+        erro_validacao = cliente.get("/api/licitacoes", params={"uf": "ZZ"})
+
+    politica = (
+        "default-src 'self'; base-uri 'self'; object-src 'none'; "
+        "frame-ancestors 'none'; form-action 'self'; script-src 'self'; "
+        "style-src-elem 'self' https://fonts.googleapis.com; "
+        "style-src-attr 'unsafe-inline'; "
+        "font-src 'self' https://fonts.gstatic.com; img-src 'self'; "
+        "connect-src 'self'"
+    )
+    for resposta in (pagina, asset, erro_validacao):
+        assert resposta.headers["content-security-policy"] == politica
+        assert resposta.headers["x-content-type-options"] == "nosniff"
+        assert resposta.headers["x-frame-options"] == "DENY"
+        assert (
+            resposta.headers["referrer-policy"]
+            == "strict-origin-when-cross-origin"
+        )
+        assert (
+            resposta.headers["permissions-policy"]
+            == "camera=(), microphone=(), geolocation=()"
+        )
+
+    assert erro_validacao.status_code == 400
 
 
 def test_frontend_funciona_fora_do_diretorio_do_repositorio(monkeypatch, tmp_path):

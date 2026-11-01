@@ -59,6 +59,11 @@ jobs:
       - name: Conferir dependências instaladas
         run: python -m pip check
 
+      - name: Auditar dependências Python
+        uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          inputs: requirements-test.txt
+
       - name: Executar testes backend e integração PostgreSQL
         run: python -m pytest -q
 
