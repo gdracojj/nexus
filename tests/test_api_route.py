@@ -143,6 +143,7 @@ def test_get_licitacoes_nao_consulta_pncp_e_funciona_se_pncp_estiver_indisponive
             1,
             [{"numero": "2/2026", "descricao": "Registro salvo"}],
             "2026-10-30T12:00:00+00:00",
+                None,
         ),
     )
 
