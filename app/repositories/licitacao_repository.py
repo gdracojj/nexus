@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 
@@ -288,12 +289,51 @@ def consultar_licitacoes(
         return (
             total_consultado,
             total,
-            [_formatar_licitacao(registro) for registro in registros],
+            [_formatar_licitacao(registro, agora) for registro in registros],
             ultima_sincronizacao.isoformat() if ultima_sincronizacao else None,
         )
 
 
-def _formatar_licitacao(registro) -> dict:
+def _formatar_licitacao(registro, agora=None) -> dict:
+    agora = agora or datetime.now(timezone.utc)
+    prazo = registro.data_encerramento_proposta
+    prazo_aware = (
+        prazo.replace(tzinfo=timezone.utc)
+        if prazo and prazo.tzinfo is None
+        else prazo
+    )
+    if not prazo_aware:
+        bucket_prazo, urgencia = "semdata", "sem"
+    elif prazo_aware <= agora:
+        bucket_prazo, urgencia = "encerrado", "encerrado"
+    else:
+        fuso = ZoneInfo("America/Sao_Paulo")
+        dias = (prazo_aware.astimezone(fuso).date() - agora.astimezone(fuso).date()).days
+        bucket_prazo = (
+            "hoje" if dias <= 0 else "amanha" if dias == 1 else
+            "tres" if dias <= 5 else "sete" if dias <= 7 else "adiante"
+        )
+        horas = (prazo_aware - agora).total_seconds() / 3600
+        urgencia = "vermelho" if horas <= 12 else "roxo" if horas <= 48 else "azul"
+
+    situacao = registro.situacao
+    contratada = (
+        isinstance(situacao, str)
+        and situacao.strip().casefold() in {"contratada", "contratado"}
+    )
+    if contratada:
+        urgencia = "verde"
+    if contratada:
+        cor_quadro = "verde"
+    elif bucket_prazo in {"encerrado", "semdata"}:
+        cor_quadro = "cinza"
+    elif bucket_prazo in {"hoje", "amanha"}:
+        cor_quadro = "vermelho"
+    elif bucket_prazo == "tres":
+        cor_quadro = "roxo"
+    else:
+        cor_quadro = "azul"
+
     return {
         "numero_controle_pncp": registro.numero_controle_pncp,
         "numero": registro.numero,
@@ -306,6 +346,9 @@ def _formatar_licitacao(registro) -> dict:
         "uf": registro.uf,
         "valor_estimado": registro.valor_estimado,
         "situacao": registro.situacao,
+        "bucket_prazo": bucket_prazo,
+        "urgencia": urgencia,
+        "cor_quadro": cor_quadro,
         "data_encerramento_proposta": (
             registro.data_encerramento_proposta.isoformat()
             if registro.data_encerramento_proposta else None

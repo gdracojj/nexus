@@ -41,7 +41,7 @@ As dependências de execução estão declaradas em `requirements.txt`. A URL do
 ### Planejadas para as Próximas Fases
 * **Engenharia de Dados:** Pipelines ETL/ELT, atualização incremental
 * **Infraestrutura e Conteinerização:** Docker, Docker Compose
-* **Testes e Qualidade:** expansão da cobertura e execução da integração PostgreSQL em ambiente de teste
+* **Testes e Qualidade:** CI executa os testes e a integração PostgreSQL em cada pull request; testes reais do frontend, lint e type checking continuam planejados
 * **Analytics & IA:** Integração com Power BI / BI Tools e recursos de Processamento de Linguagem Natural (NLP) para análise de editais
 
 ---
@@ -94,6 +94,9 @@ O comportamento implementado em `app/pncp/client.py` é:
 
 ```text
 nexus/
+├── .github/
+│   └── workflows/
+│       └── tests.yml          # CI: Python 3.10/3.14, PostgreSQL e sintaxe JavaScript
 ├── app/
 │   ├── core/
 │   │   ├── config.py          # configuração por ambiente
@@ -138,6 +141,12 @@ nexus/
 ```
 
 `requirements.txt` contém as dependências da aplicação; `requirements-test.txt` inclui essas dependências mais `pytest` e `httpx2` para os testes HTTP com FastAPI `TestClient`. Para executar integração PostgreSQL, aponte `NEXUS_TEST_DATABASE_URL` para uma base descartável; cada execução cria e remove um schema isolado.
+
+### Proteção da API
+
+As rotas sob `/api/` usam um limitador token bucket em memória por endereço IP: por padrão, cada cliente pode fazer até 60 consultas por minuto, com rajadas de até 60. Respostas incluem `X-RateLimit-Limit` e `X-RateLimit-Remaining`; ao exceder o limite, a API responde `429` com `Retry-After`. O limite pode ser alterado com `NEXUS_API_RATE_LIMIT_PER_MINUTE` (inteiro positivo). O estado é local a cada processo; em deployments com vários workers/instâncias, configure também um limite compartilhado no proxy ou gateway para que o limite seja global.
+
+Por padrão, a API usa o IP da conexão e ignora `X-Forwarded-For`. Se a aplicação estiver atrás de um proxy reverso confiável, informe suas redes em `NEXUS_TRUSTED_PROXY_CIDRS` (CIDRs separados por vírgula) para usar o IP original encaminhado. Configure somente redes de proxies sob seu controle, pois confiar em cabeçalhos enviados por clientes permite contornar limites. As fontes agora usam as fontes disponíveis no sistema do visitante; o navegador não faz requisições ao Google Fonts nem envia seu IP a esse serviço.
 
 ---
 
@@ -276,31 +285,51 @@ Falhas do PNCP ocorrem no comando de coleta, que termina com código diferente d
 
 ## 🗺️ Roadmap de Desenvolvimento
 
-O desenvolvimento do NEXUS é estruturado de forma iterativa e incremental:
+O roadmap abaixo reflete o estado do repositório após a integração dos PRs #15 e #16 em 30/10/2026. A priorização considera primeiro custo e validade das consultas; depois operação e coleta. O NEXUS permanece um monólito modular e não depende de filas, Redis ou microsserviços para estes passos.
 
-- [x] **Fase 1 — Consolidação da Coleta e API REST**
-  - [x] Integração funcional com a API do PNCP.
-  - [x] Normalização de payload em DTOs internos (`parser.py`).
-  - [x] Tentativas limitadas e espera exponencial para falhas transitórias do PNCP.
-  - [x] Endpoint FastAPI com documentação OpenAPI.
-- [x] **Fase 2 — Implementação da persistência e migration inicial**
-  - [x] Campos normalizados do endpoint PNCP, com payload original JSONB.
-  - [x] Upsert idempotente pelo identificador estável `numeroControlePNCP`.
-  - [x] Registro de cada execução e seu resultado.
-  - [x] Migration versionada com Alembic.
-  - [x] Leitura da API desacoplada da coleta PNCP, iniciada por CLI com lock PostgreSQL.
-  - [ ] Expansão do schema conforme novos endpoints e necessidades confirmadas.
-- [ ] **Fase 3 — Engenharia de Dados & Automação de Coleta**
-  - [ ] Agendamento operacional da coleta e atualização incremental da base.
-  - [ ] Ampliação da observabilidade e recuperação de execuções interrompidas.
-- [ ] **Fase 4 — Módulo de Gestão Pós-Contratação**
-  - [ ] Cadastro e vinculação de Atas de Registro de Preços.
-  - [ ] Controle automatizado de saldo de quantitativos, prazos de vigência e reajustes.
-- [ ] **Fase 5 — Observabilidade & Conteinerização**
-  - [x] Testes unitários, de integração e do contrato HTTP com `pytest`.
-  - [x] Painel web para consulta e acompanhamento visual dos prazos.
-  - [ ] Conteinerização total da solução via `Docker` e `Docker Compose`.
-  - [ ] Estruturação de dashboards analíticos e exploração de recursos de IA para leitura de editais.
+### Concluído
+
+- [x] Coleta explícita do PNCP por CLI, separada da rota de leitura.
+- [x] Normalização e validação de registros recebidos do PNCP.
+- [x] Retries limitados, backoff, `Retry-After`, limite de páginas e prazo total da coleta.
+- [x] PostgreSQL, migrations Alembic, upsert idempotente, payload original e histórico de execuções.
+- [x] Lock PostgreSQL para impedir coletas simultâneas entre processos conectados ao mesmo banco.
+- [x] Preservação de `coletada_em` como primeira coleta conhecida e atualização separada em `atualizada_em`.
+- [x] Paginação da consulta HTTP e do painel, com `page_size` limitado a 100 e filtro de prazo aplicado na consulta ao banco.
+- [x] CI em GitHub Actions para Python 3.10 e 3.14 com PostgreSQL 16; os dois jobs passaram após o merge do PR #15.
+- [x] CI valida também `pip check` e sintaxe dos módulos JavaScript.
+- [x] Testes de rota HTTP, cliente PNCP, parser, CLI e persistência PostgreSQL.
+
+### Próximas tarefas — prioridade alta
+
+1. [ ] **Limites de consulta no servidor:** validar `uf` contra as UFs oficiais e limitar o comprimento de `produto` na API. Hoje a rota verifica apenas que `uf` tem dois caracteres; o limite de 100 caracteres do termo existe no frontend, mas não é imposto pela API.
+2. [ ] **Índices para filtros e ordenação:** medir consultas representativas com `EXPLAIN (ANALYZE, BUFFERS)` e adicionar migration apenas para índices que melhorem os planos observados. Hoje a tabela tem unicidade pelo identificador PNCP, mas não índices dedicados para UF/prazo/descrição.
+3. [ ] **Reduzir custo de paginação:** medir as duas contagens e a consulta de última sincronização executadas por requisição; avaliar índices e estratégia de contagem antes de otimizar. A paginação atual usa `OFFSET`, cujo custo pode crescer em páginas profundas.
+4. [ ] **Contratos tipados da API:** definir schemas Pydantic de resposta e formalizar os limites e erros no OpenAPI, preservando o formato público atual.
+5. [ ] **Qualidade contínua:** ampliar o workflow com lint, formatação e verificação de migrations. Type checking deve ser introduzido gradualmente, começando pelos módulos mais estáveis.
+
+### Próximas tarefas — operação e coleta
+
+- [ ] Substituir `print` operacional do cliente PNCP por logging consistente e seguro; adicionar correlação por execução, página, tentativa e duração.
+- [ ] Adicionar health/readiness com dependências claramente definidas e procedimento para identificar execuções deixadas em `executando` após queda do processo.
+- [ ] Processar a coleta por páginas/lotes sem manter todos os registros do PNCP em memória até o fim. Hoje há upserts em lotes de até 250, mas todos os dados são acumulados antes e a persistência/conclusão ocorre em uma única transação; não há checkpoint nem retomada.
+- [ ] Documentar e configurar o agendamento externo da CLI para cada ambiente. O reuso de coleta recente e o lock já existem; não há scheduler interno.
+- [ ] Criar ambiente de desenvolvimento reproduzível com Docker Compose, após documentar variáveis e validar o fluxo de migrations.
+
+### Próximas tarefas — painel, segurança e arquitetura
+
+- [ ] Criar testes comportamentais do frontend para paginação, filtros, erros, tema e estado vazio; o CI atual valida apenas sintaxe JavaScript.
+- [ ] Revisar acessibilidade por teclado/leitor de tela e conferir contraste em ambos os temas.
+- [ ] Avaliar rate limiting e headers de segurança no ponto de exposição (proxy ou aplicação), junto à configuração de CORS se a origem do frontend mudar.
+- [ ] Extrair gradualmente schemas/rotas e separar responsabilidades do repositório quando houver mudança funcional que justifique a separação.
+- [ ] Documentar licença e runbook operacional; o repositório ainda não contém `LICENSE` nem um procedimento versionado de deploy, backup e restauração.
+
+### Evolução de produto — depende de descoberta
+
+- [ ] Definir público-alvo, jornada, frescor esperado e métricas de utilidade com usuários.
+- [ ] Especificar Atas de Registro de Preços, vigência, fornecedor, movimentações de saldo, organizações e permissões antes de criar tabelas ou telas.
+- [ ] Só então implementar autenticação/autorização e o módulo de gestão pós-contratação.
+- [ ] Avaliar analytics e recursos de IA após definir casos de uso e critérios de qualidade; não fazem parte do produto atualmente implementado.
 
 ---
 

@@ -5,10 +5,12 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 
 from app.services.licitacao_service import consultar_licitacoes
+from app.core.rate_limit import ApiRateLimitMiddleware
 
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="NEXUS")
+app.add_middleware(ApiRateLimitMiddleware)
 
 
 @app.get("/api/licitacoes")
