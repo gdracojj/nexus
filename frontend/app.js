@@ -55,11 +55,11 @@ function timeline(l){
   const groups=new Map();for(const i of l){const key=i.c.date?diaKey(i.c.date):'semdata';if(!groups.has(key))groups.set(key,[]);groups.get(key).push(i)}
   const rows=[];let rowIndex=0;
   for(const [key,items] of groups){const expanded=Boolean(S.expanded[key]),shown=expanded?items:items.slice(0,8);
-    for(const i of shown){const span=i.c.date?Math.max(0,Math.min(100,(i.c.date-now)/horizonMs)):0;const status=STATUS[i.c.estado]||'status-muted',label=i.c.date?`${horaPrazo(i)} · ${fmtRestante(i.c.ms)}`:'Prazo não informado';
+    for(const i of shown){const horasRestantes=i.c.date?Math.max(0,i.c.ms/3600000):0;const pct=i.c.date?Math.min(100,Math.max(3,(horasRestantes/72)*100)):0;if(i.c.date)console.log(horasRestantes,pct);const status=STATUS[i.c.estado]||'status-muted',label=i.c.date?`${horaPrazo(i)} · ${fmtRestante(i.c.ms)}`:'Prazo não informado';
       rows.push(h('button',{type:'button',class:'timeline-row',style:`--row-delay:${rowIndex++*30}ms`,title:prazoTooltip(i), 'aria-label':`${i.objeto||'Licitação'}, ${STATUS_TEXT[i.c.estado]||STATUS_TEXT.sem}, prazo ${label}`,onclick:()=>abrir(i)},
         h('span',{class:'timeline-info'},h('span',{class:'timeline-title'},i.objeto||'Objeto não informado'),h('span',{class:'timeline-meta'},metadata(i))),
-        h('span',{class:'timeline-plot'},h('span',{class:'now-line','aria-hidden':'true'}),i.c.date&&h('span',{class:`timeline-bar ${status}`,style:`--bar-width:${span}%`,'aria-hidden':'true'}),
-          i.c.date?h('span',{class:'timeline-label',style:`--bar-width:${span}%`},h('b',{},horaPrazo(i)),` · ${fmtRestante(i.c.ms)}`):h('span',{class:'timeline-label muted'},'Sem prazo'))));
+        h('span',{class:'timeline-plot'},h('span',{class:'now-line','aria-hidden':'true'}),i.c.date&&h('span',{class:`timeline-bar ${status}`,style:`width:${pct}%`,'aria-hidden':'true'}),
+          i.c.date?h('span',{class:'timeline-label',style:`left:calc(${pct}% + 14px)`},h('b',{},horaPrazo(i)),` · ${fmtRestante(i.c.ms)}`):h('span',{class:'timeline-label muted'},'Sem prazo'))));
     }
     if(items.length>8){const rest=items.slice(8),dots=rest.map((i,index)=>{const pos=i.c.date?Math.min(100,Math.max(0,(i.c.date-now)/horizonMs*100)):0;return h('i',{class:`overflow-dot ${STATUS[i.c.estado]||'status-muted'}`,style:`left:${pos}%;opacity:${Math.max(.15,.75-index*.03)}`,'aria-hidden':'true'})});
       rows.push(h('div',{class:'timeline-overflow'},h('span',{class:'timeline-info'},h('button',{class:'expand-group',type:'button',onclick:()=>{S.expanded[key]=!expanded;render()}},expanded?'Mostrar menos':`+ ${rest.length} outras ${key==='semdata'?'sem prazo':`com prazo em ${rotuloDia(items[0].c.date)}`}`)),h('span',{class:'timeline-plot'},h('span',{class:'now-line','aria-hidden':'true'}),dots)));
