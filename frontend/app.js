@@ -2,8 +2,9 @@ import {buscar} from './api.js';
 import {prepararPrazo,BUCKETS,diaKey,rotuloDia,dataCompleta,parsePrazo,horaCurta} from './prazo.js';
 
 const UFS='AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ');
-const S={items:[],total:0,totalConsultado:0,totalPages:0,page:1,pageSize:25,sync:null,status:'idle',erro:null,f:{produto:'',uf:''},modo:'timeline',periodo:'tudo',ctl:null,expanded:{},animarView:false};
-const $=s=>document.querySelector(s),main=$('#main');let liveTimer=null;
+const S={items:[],total:0,totalConsultado:0,totalPages:0,page:1,pageSize:25,sync:null,syncRun:null,status:'idle',erro:null,f:{produto:'',uf:''},modo:'timeline',periodo:'tudo',ctl:null,expanded:{},animarView:false};
+const $=s=>document.querySelector(s),main=$('#main');
+let liveTimer=null;
 const h=(t,a={},...c)=>{const e=document.createElement(t);for(const[k,v]of Object.entries(a)){if(k==='class')e.className=v;else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);else if(v!==false&&v!=null)e.setAttribute(k,v===true?'':v)}e.append(...c.flat().filter(x=>x!=null&&x!==false));return e};
 const brl=v=>v==null||isNaN(+v)?'Não informado':new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(+v);
 const STATUS={vermelho:'status-red',roxo:'status-purple',azul:'status-blue',verde:'status-green',cinza:'status-muted',encerrado:'status-muted',sem:'status-muted'};
@@ -15,7 +16,7 @@ async function carregar({reset=true}={}){
   S.ctl?.abort();S.ctl=new AbortController();S.status='loading';render();
   const rota=location.hash.replace('#/','')||'geral';
   const prazoDias=rota==='licitacoes'&&S.periodo!=='tudo'?Number(S.periodo):null;
-  try{const r=await buscar({...S.f,page:S.page,pageSize:S.pageSize,prazoDias},S.ctl.signal);Object.assign(S,{items:r.items.map(cls),total:r.total,totalConsultado:r.totalConsultado,totalPages:r.totalPages,page:r.page,pageSize:r.pageSize,sync:r.sync,status:'ok',erro:null})}
+  try{const r=await buscar({...S.f,page:S.page,pageSize:S.pageSize,prazoDias},S.ctl.signal);Object.assign(S,{items:r.items.map(cls),total:r.total,totalConsultado:r.totalConsultado,totalPages:r.totalPages,page:r.page,pageSize:r.pageSize,sync:r.sync,syncRun:r.syncRun,status:'ok',erro:null})}
   catch(e){if(e.name==='AbortError')return;S.status='erro';S.erro=e}
   render();
 }
@@ -37,11 +38,31 @@ function abrir(i){
 const estado=()=>{
   if(S.status==='loading')return h('div',{role:'status'},h('span',{class:'muted'},'Consultando a base do NEXUS…'),...[1,2,3].map(()=>h('div',{class:'skel'})));
   if(S.status==='erro')return h('div',{class:'notice err',role:'alert'},S.erro.message+' ',h('button',{class:'btn',type:'button',onclick:()=>carregar({reset:false})},'Tentar novamente'));
-  if(!S.items.length){const periodoAtivo=S.periodo!=='tudo';const mensagem=S.total>0?'Não há resultados nesta página. Volte à página anterior.':(S.f.produto||S.f.uf||periodoAtivo)?'Nenhuma licitação para estes filtros. Ajuste o termo, a UF ou o período.':S.sync?'Não há oportunidades vigentes na base coletada.':'A base ainda não tem licitações coletadas. Execute a sincronização com o PNCP.';return h('div',{class:'empty'},mensagem)}
+  if(!S.items.length){
+    const rota=location.hash.replace('#/','')||'geral';
+    const periodoAtivo=rota==='licitacoes'&&S.periodo!=='tudo';
+    const mensagem=S.total>0?'Não há resultados nesta página. Volte à página anterior.':
+      (S.f.produto||S.f.uf||periodoAtivo)?'Nenhuma licitação para estes filtros. Ajuste o termo, a UF ou o período.':
+      S.syncRun?.status==='parcial'?'A última sincronização ficou parcial. Os resultados disponíveis podem estar incompletos.':
+      S.syncRun?.status==='executando'?'Há uma sincronização em andamento. Os resultados disponíveis podem estar incompletos.':
+      S.syncRun?.status==='falhou'?'A última sincronização falhou. Os dados podem estar desatualizados.':
+      S.sync?'Não há oportunidades vigentes na base coletada.':'A base ainda não tem licitações coletadas. Execute a sincronização com o PNCP.';
+    return h('div',{class:'empty'},mensagem);
+  }
   return null;
 };
-const aviso=()=>{const inicio=S.total?(S.page-1)*S.pageSize+1:0,fim=Math.min(S.page*S.pageSize,S.total);const faixa=S.total?`Exibindo ${inicio}–${fim} de ${S.total} licitações. `:'Nenhuma licitação corresponde à consulta. ';return h('div',{class:'muted notice-line'},`${faixa}Base coletada pelo NEXUS, não todas as contratações do PNCP. `,S.sync?`Última sincronização: ${dataCompleta(new Date(S.sync))}.`:'Última sincronização não informada.')};
-const paginacao=()=>S.totalPages>1&&h('div',{class:'pg','aria-label':'Paginação das licitações'},h('button',{class:'btn',type:'button',disabled:S.page<=1,onclick:()=>{S.page--;carregar({reset:false})}},'Anterior'),h('span',{class:'muted',role:'status'},`Página ${S.page} de ${S.totalPages}`),h('button',{class:'btn',type:'button',disabled:S.page>=S.totalPages,onclick:()=>{S.page++;carregar({reset:false})}},'Próxima'));
+const aviso=()=>{
+  const inicio=S.total?(S.page-1)*S.pageSize+1:0,fim=Math.min(S.page*S.pageSize,S.total);
+  const faixa=S.total?`Exibindo ${inicio}–${fim} de ${S.total} licitações. `:'Nenhuma licitação corresponde à consulta. ';
+  const status=S.syncRun?.status==='parcial'?`Última coleta parcial: ${S.syncRun.paginas_consultadas} páginas confirmadas; os resultados podem estar incompletos. `:
+    S.syncRun?.status==='executando'?`Coleta em andamento: ${S.syncRun.paginas_consultadas} páginas confirmadas até agora. `:
+    S.syncRun?.status==='falhou'?'A última tentativa de coleta falhou. Os dados podem estar desatualizados. ':'';
+  return h('div',{class:'muted notice-line'},`${faixa}Base coletada pelo NEXUS, não todas as contratações do PNCP. `,status,S.sync?`Última sincronização: ${dataCompleta(new Date(S.sync))}.`:'Última sincronização não informada.');
+};
+const paginacao=()=>S.totalPages>1&&h('div',{class:'pg','aria-label':'Paginação das licitações'},
+  h('button',{class:'btn',type:'button',disabled:S.page<=1,onclick:()=>{S.page--;carregar({reset:false})}},'Anterior'),
+  h('span',{class:'muted',role:'status'},`Página ${S.page} de ${S.totalPages}`),
+  h('button',{class:'btn',type:'button',disabled:S.page>=S.totalPages,onclick:()=>{S.page++;carregar({reset:false})}},'Próxima'));
 
 const metadata=i=>[i.orgao||i.unidade,i.uf,i.valor!=null?brl(i.valor):null].filter(Boolean).join(' · ')||'Sem detalhes de órgão';
 const prazoTooltip=i=>[i.objeto,i.orgao,i.uf,brl(i.valor),i.id,i.c.date&&dataCompleta(i.c.date)].filter(Boolean).join(' · ');

@@ -76,6 +76,11 @@ def test_registro_malformado_registra_falha_da_coleta(monkeypatch):
         "lock_coleta_pncp",
         lambda: nullcontext(),
     )
+    monkeypatch.setattr(
+        licitacao_repository,
+        "obter_execucao_incompleta",
+        lambda _parametros: None,
+    )
     monkeypatch.setattr(licitacao_repository, "iniciar_execucao", lambda _parametros: 1)
     monkeypatch.setattr(
         licitacao_repository,
@@ -103,4 +108,4 @@ def test_registro_malformado_registra_falha_da_coleta(monkeypatch):
     assert "DADO INTERNO DE TESTE" not in str(erro.value)
     assert len(falhas_registradas) == 1
     assert falhas_registradas[0][0] == 1
-    assert falhas_registradas[0][2:] == (1, 1, 1)
+    assert falhas_registradas[0][2:] == (1, 1)

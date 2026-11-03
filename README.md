@@ -76,7 +76,9 @@ A aplicação consome o seguinte endpoint oficial do PNCP:
 `https://pncp.gov.br/api/consulta/v1/contratacoes/proposta`
 
 ### Paginação e limite de taxa
-O cliente percorre as páginas usando o campo `totalPaginas` retornado pelo PNCP e agrega os registros antes de normalizá-los. Cada consulta aceita no máximo 100 páginas. O prazo de 120 segundos é compartilhado entre todas as páginas, tentativas, esperas e normalização dos registros.
+O cliente percorre as páginas usando `totalPaginas`, normaliza uma página por vez e persiste cada página com seu checkpoint na mesma transação. O limite é de 110 páginas por consulta, exceto SP, que aceita até 160; o prazo total de cada execução é 300 segundos.
+
+Se a coleta falhar depois de confirmar páginas, a execução fica `parcial`, os registros confirmados permanecem consultáveis e uma nova execução com os mesmos parâmetros retoma da página seguinte. A chave `numeroControlePNCP` mantém os upserts idempotentes. A API informa o status da execução mais recente e o painel avisa quando os dados podem estar incompletos. O progresso é confirmado por página; a retomada não representa um snapshot imutável do PNCP, cuja paginação pode mudar entre execuções.
 
 ### Camada Inicial de Resiliência Implementada
 O comportamento implementado em `app/pncp/client.py` é:
@@ -86,7 +88,7 @@ O comportamento implementado em `app/pncp/client.py` é:
 * **`Retry-After`:** aceita segundos inteiros ou uma data HTTP. Datas passadas resultam em espera zero. Esperas solicitadas acima de 60 segundos causam falha imediata.
 * **Falhas permanentes:** outros status HTTP e erros TLS não são repetidos. Se o prazo total acabar antes de uma nova tentativa, a coleta falha e o comando termina com código diferente de zero.
 
-> A coleta é síncrona no processo CLI e depende da disponibilidade e do tempo de resposta do PNCP. Requests limita a inatividade da conexão, não o tempo absoluto de download da resposta; por isso, uma resposta que envie dados continuamente pode ultrapassar o prazo de 120 segundos. A rota de leitura não depende do PNCP e continua consultando os registros já persistidos durante uma indisponibilidade externa.
+> A coleta é síncrona no processo CLI e depende da disponibilidade e do tempo de resposta do PNCP. Requests limita a inatividade da conexão, não o tempo absoluto de download da resposta; por isso, uma resposta que envie dados continuamente pode ultrapassar o prazo total de 300 segundos. A rota de leitura não depende do PNCP e continua consultando os registros já persistidos durante uma indisponibilidade externa.
 
 ---
 
@@ -211,7 +213,7 @@ Para executar os testes use `python -m pytest -q`. Os testes de integração Pos
 
 ### Persistência PNCP
 
-`licitacoes.numero_controle_pncp` usa o `numeroControlePNCP` do PNCP como chave externa única. A tabela `pncp_payloads` mantém um único snapshot JSONB por contratação: o SHA-256 evita regravar cópias idênticas e o snapshot é substituído quando o conteúdo muda. `coletada_em` registra a primeira coleta conhecida pelo NEXUS e permanece inalterado em upserts posteriores; `atualizada_em` registra a sincronização mais recente; `data_publicacao` é a data de publicação informada pelo PNCP. A migration inicial já tinha os dois campos de coleta/atualização, portanto essa correção não requer migration nem inventa datas para registros existentes. Para dados anteriores à correção, `coletada_em` pode representar uma sincronização posterior à descoberta original, e esse histórico não pode ser reconstruído com segurança. O histórico das execuções fica em `sync_execucoes`; os upserts de licitações e payloads são enviados em lotes de até 250 chaves, e os lotes e a conclusão da execução são confirmados na mesma transação. Falhas de ingestão são registradas em transação separada, quando o banco continua acessível.
+`licitacoes.numero_controle_pncp` usa o `numeroControlePNCP` do PNCP como chave externa única. A tabela `pncp_payloads` mantém um único snapshot JSONB por contratação: o SHA-256 evita regravar cópias idênticas e o snapshot é substituído quando o conteúdo muda. `coletada_em` registra a primeira coleta conhecida pelo NEXUS e permanece inalterado em upserts posteriores; `atualizada_em` registra a sincronização mais recente; `data_publicacao` é a data de publicação informada pelo PNCP. O histórico fica em `sync_execucoes`. Cada página, seus upserts e o checkpoint correspondente são confirmados na mesma transação. Uma falha depois de páginas confirmadas registra a execução como `parcial`, preserva os registros e permite retomar da próxima página. Não há migration adicional: o status `parcial` já existe no schema.
 
 O mapeamento usa o resumo do endpoint de propostas abertas e os campos documentados pelo [Swagger da API de Consulta do PNCP](https://pncp.gov.br/api/consulta/swagger-ui/index.html) e pelo [manual oficial de integração](https://pncp.gov.br/manual/pt-br/latest/singlehtml/index.html). Datas sem fuso explícito são interpretadas no horário de Brasília; valores monetários são persistidos como `NUMERIC(20,4)`.
 
@@ -229,13 +231,13 @@ Consulta oportunidades vigentes já persistidas no PostgreSQL (ou registros sem 
 #### Parâmetros da Requisição (Query Params)
 | Parâmetro | Tipo | Obrigatório | Descrição |
 | :--- | :--- | :--- | :--- |
-| `uf` | `string` | Não | Sigla da Unidade Federativa com 2 caracteres (Ex: `RJ`, `SP`). Se omitida, consulta todas as UFs. |
-| `produto` | `string` | Não | Termo opcional para busca sem distinção entre maiúsculas e minúsculas na descrição/objeto. O padrão é vazio. |
+| `uf` | `string` | Não | Sigla oficial da Unidade Federativa (Ex: `RJ`, `SP`). Se omitida, consulta todas as UFs. |
+| `produto` | `string` | Não | Termo opcional de até 100 caracteres para busca sem distinção entre maiúsculas e minúsculas na descrição/objeto. O padrão é vazio. |
 | `page` | `integer` | Não | Página baseada em 1. Padrão `1`; intervalo permitido de `1` a `10000`. |
 | `page_size` | `integer` | Não | Quantidade máxima de registros por resposta. Padrão `25`; intervalo permitido de `1` a `100`. |
 | `prazo_dias` | `integer` | Não | Limita oportunidades aos próximos dias, a partir do momento da consulta. Aceita de `1` a `30`; sem o parâmetro, inclui todos os prazos vigentes e os registros sem prazo. |
 
-`uf`, quando informado, é removido de espaços nas extremidades e convertido para maiúsculas. A rota verifica se possui exatamente dois caracteres; não valida se esses caracteres correspondem a uma UF oficial. O termo `produto` é removido de espaços nas extremidades e convertido para minúsculas.
+`uf`, quando informado, é removido de espaços nas extremidades, convertido para maiúsculas e validado contra as siglas oficiais das UFs brasileiras. O termo `produto` é removido de espaços nas extremidades e convertido para minúsculas; a API limita o valor recebido a 100 caracteres.
 
 #### Exemplo de Chamada
 ```bash
@@ -253,6 +255,13 @@ curl -X GET "http://127.0.0.1:8000/api/licitacoes?uf=RJ&produto=material&page=1&
   "page_size": 25,
   "total_pages": 1,
   "ultima_sincronizacao": "2026-10-30T12:00:00+00:00",
+  "ultima_execucao": {
+    "status": "concluida",
+    "iniciada_em": "2026-10-30T11:59:00+00:00",
+    "finalizada_em": "2026-10-30T12:00:00+00:00",
+    "paginas_consultadas": 1,
+    "registros_processados": 10
+  },
   "resultados": [
     {
       "numero_controle_pncp": "12345678000199-1-000001/2026",
@@ -271,12 +280,12 @@ curl -X GET "http://127.0.0.1:8000/api/licitacoes?uf=RJ&produto=material&page=1&
 }
 ```
 
-`total_consultado` conta os registros da UF e do período antes do filtro `produto`; sem `prazo_dias`, inclui oportunidades vigentes e registros sem prazo, e com `prazo_dias` inclui somente oportunidades dentro desse intervalo. `total` conta todos os registros correspondentes aos filtros, independentemente da página atual. `page` informa a página devolvida, `page_size` o limite solicitado e `total_pages` o total de páginas (zero quando não há resultados). A ordenação é por prazo de encerramento crescente e número da contratação. Se `uf` for omitida, a consulta considera todas as UFs. `ultima_sincronizacao` informa a conclusão mais recente de uma sincronização bem-sucedida. A rota também pode responder:
+`total_consultado` conta os registros da UF e do período antes do filtro `produto`; sem `prazo_dias`, inclui oportunidades vigentes e registros sem prazo, e com `prazo_dias` inclui somente oportunidades dentro desse intervalo. `total` conta todos os registros correspondentes aos filtros, independentemente da página atual. `page` informa a página devolvida, `page_size` o limite solicitado e `total_pages` o total de páginas (zero quando não há resultados). A ordenação é por prazo de encerramento crescente e número da contratação. Se `uf` for omitida, a consulta considera todas as UFs. `ultima_sincronizacao` informa a conclusão mais recente de uma sincronização bem-sucedida; `ultima_execucao` descreve a tentativa mais recente para a UF consultada, inclusive `executando`, `parcial` ou `falhou`, com seu progresso. A rota também pode responder:
 
 | Status | Situação | Corpo |
 | :--- | :--- | :--- |
-| `400` | `uf` com comprimento diferente de 2 | `{"detail":"Informe a sigla do estado com 2 letras."}` |
-| `422` | Tipos inválidos, `page` fora de `1–10000`, `page_size` fora de `1–100` ou `prazo_dias` fora de `1–30` | Corpo de validação do FastAPI |
+| `400` | `uf` não corresponde a uma sigla oficial | `{"detail":"Informe uma sigla de UF válida."}` |
+| `422` | Tipos inválidos, `produto` acima de 100 caracteres, `page` fora de `1–10000`, `page_size` fora de `1–100` ou `prazo_dias` fora de `1–30` | Corpo de validação do FastAPI |
 | `500` | Falha inesperada ao consultar o PostgreSQL ou erro interno | `{"detail":"Erro interno ao processar a consulta."}` |
 
 Falhas do PNCP ocorrem no comando de coleta, que termina com código diferente de zero; não alteram o status HTTP das consultas aos dados já persistidos. As mensagens públicas de erro `500` são genéricas e não incluem detalhes técnicos.
@@ -339,6 +348,12 @@ O roadmap abaixo reflete o estado do repositório após a integração dos PRs #
 * **Painel informativo:** o painel apresenta oportunidades persistidas pelo NEXUS; a confirmação e os detalhes oficiais devem ser consultados no PNCP.
 * **Filtros Textuais Básicos:** A filtragem por palavra-chave é puramente textual (case-insensitive), sem suporte a sinônimos ou busca semântica (planejada para etapas futuras).
 * **Ausência de Módulo Persistente Pós-Compra:** As telas de acompanhamento de atas e saldos encontram-se em fase de especificação e modelagem.
+
+## Segurança HTTP
+
+A aplicação envia uma Content Security Policy que restringe scripts, imagens e conexões à mesma origem, permitindo a folha e as fontes do Google Fonts usadas pela interface. A política bloqueia objetos incorporados e enquadramento da página; atributos `style` inline permanecem permitidos para a largura calculada das barras do painel. Os caminhos da interface Swagger/ReDoc (`/docs`, `/redoc` e `/docs/oauth2-redirect`) recebem os demais headers, mas não a CSP, pois o Swagger UI padrão carrega código inline e recursos de CDN. As respostas também incluem `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` e uma `Permissions-Policy` que desativa câmera, microfone e geolocalização. HSTS não é enviado pela aplicação porque a terminação TLS depende do ambiente de implantação.
+
+O GitHub Actions executa auditoria das dependências Python declaradas em `requirements-test.txt` usando `pip-audit`. A auditoria identifica versões com vulnerabilidades conhecidas; atualizações continuam sendo avaliadas e realizadas por alterações revisadas.
 
 ---
 

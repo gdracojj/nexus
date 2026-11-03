@@ -52,7 +52,8 @@ export async function buscar(
       page:j?.page??page,
       pageSize:j?.page_size??pageSize,
       totalPages:j?.total_pages??0,
-      sync
+      sync,
+      syncRun:!Array.isArray(j)?(j.ultima_execucao??null):null
     };
   }catch(e){
     if(e instanceof ApiError)throw e;

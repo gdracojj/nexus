@@ -22,7 +22,13 @@ def test_get_licitacoes_retorna_contrato_json_e_filtros_normalizados(monkeypatch
 
     def consultar(uf, produto, page, page_size, prazo_dias):
         chamadas.append((uf, produto, page, page_size, prazo_dias))
-        return 4, 1, resultados, "2026-10-30T12:00:00+00:00"
+        return 4, 1, resultados, "2026-10-30T12:00:00+00:00", {
+            "status": "concluida",
+            "iniciada_em": "2026-10-30T11:59:00+00:00",
+            "finalizada_em": "2026-10-30T12:00:00+00:00",
+            "paginas_consultadas": 1,
+            "registros_processados": 1,
+        }
 
     monkeypatch.setattr(licitacao_repository, "consultar_licitacoes", consultar)
 
@@ -41,6 +47,13 @@ def test_get_licitacoes_retorna_contrato_json_e_filtros_normalizados(monkeypatch
         "total_pages": 1,
         "resultados": resultados,
         "ultima_sincronizacao": "2026-10-30T12:00:00+00:00",
+        "ultima_execucao": {
+            "status": "concluida",
+            "iniciada_em": "2026-10-30T11:59:00+00:00",
+            "finalizada_em": "2026-10-30T12:00:00+00:00",
+            "paginas_consultadas": 1,
+            "registros_processados": 1,
+        },
     }
     assert chamadas == [("RJ", "material", 1, 25, None)]
 
@@ -49,7 +62,7 @@ def test_get_licitacoes_sem_registros_retorna_lista_vazia(monkeypatch):
     monkeypatch.setattr(
         licitacao_repository,
         "consultar_licitacoes",
-        lambda _uf, _produto, **_kwargs: (0, 0, [], None),
+        lambda _uf, _produto, **_kwargs: (0, 0, [], None, None),
     )
 
     with TestClient(main.app) as cliente:
@@ -66,6 +79,7 @@ def test_get_licitacoes_sem_registros_retorna_lista_vazia(monkeypatch):
         "total_pages": 0,
         "resultados": [],
         "ultima_sincronizacao": None,
+        "ultima_execucao": None,
     }
 
 
@@ -74,7 +88,7 @@ def test_get_licitacoes_repassa_paginacao_e_prazo_ao_servico(monkeypatch):
 
     def consultar(uf, produto, page, page_size, prazo_dias):
         chamadas.append((uf, produto, page, page_size, prazo_dias))
-        return 20, 12, [{"numero": str(page)}], None
+        return 20, 12, [{"numero": str(page)}], None, None
 
     monkeypatch.setattr(licitacao_repository, "consultar_licitacoes", consultar)
 
@@ -97,7 +111,7 @@ def test_get_licitacoes_rejeita_limites_de_paginacao_e_prazo(monkeypatch):
     monkeypatch.setattr(
         licitacao_repository,
         "consultar_licitacoes",
-        lambda *_args, **_kwargs: chamadas.append(1) or (0, 0, [], None),
+        lambda *_args, **_kwargs: chamadas.append(1) or (0, 0, [], None, None),
     )
 
     with TestClient(main.app) as cliente:
@@ -129,6 +143,7 @@ def test_get_licitacoes_nao_consulta_pncp_e_funciona_se_pncp_estiver_indisponive
             1,
             [{"numero": "2/2026", "descricao": "Registro salvo"}],
             "2026-10-30T12:00:00+00:00",
+                None,
         ),
     )
 
@@ -144,18 +159,34 @@ def test_get_licitacoes_valida_parametro_uf(monkeypatch):
     monkeypatch.setattr(
         licitacao_repository,
         "consultar_licitacoes",
-        lambda _uf, _produto, **_kwargs: (0, 0, [], None),
+        lambda _uf, _produto, **_kwargs: (0, 0, [], None, None),
     )
 
     with TestClient(main.app) as cliente:
         sem_uf = cliente.get("/api/licitacoes")
-        uf_invalida = cliente.get("/api/licitacoes", params={"uf": "R"})
+        uf_curta = cliente.get("/api/licitacoes", params={"uf": "R"})
+        uf_desconhecida = cliente.get("/api/licitacoes", params={"uf": "ZZ"})
 
     assert sem_uf.status_code == 200
-    assert uf_invalida.status_code == 400
-    assert uf_invalida.json() == {
-        "detail": "Informe a sigla do estado com 2 letras."
+    assert uf_curta.status_code == uf_desconhecida.status_code == 400
+    assert uf_curta.json() == uf_desconhecida.json() == {
+        "detail": "Informe uma sigla de UF válida."
     }
+
+
+def test_get_licitacoes_rejeita_produto_acima_de_cem_caracteres(monkeypatch):
+    chamadas = []
+    monkeypatch.setattr(
+        licitacao_repository,
+        "consultar_licitacoes",
+        lambda *_args, **_kwargs: chamadas.append(1) or (0, 0, [], None, None),
+    )
+
+    with TestClient(main.app) as cliente:
+        resposta = cliente.get("/api/licitacoes", params={"produto": "x" * 101})
+
+    assert resposta.status_code == 422
+    assert chamadas == []
 
 
 def test_get_licitacoes_oculta_detalhes_de_falha_interna(monkeypatch, caplog):
@@ -194,6 +225,36 @@ def test_aplicacao_serve_frontend_e_assets_estaticos():
     assert "Consultando a base do NEXUS" in app_js.text
 
 
+def test_respostas_api_e_estaticas_incluem_headers_de_seguranca():
+    with TestClient(main.app) as cliente:
+        pagina = cliente.get("/")
+        asset = cliente.get("/app.js")
+        erro_validacao = cliente.get("/api/licitacoes", params={"uf": "ZZ"})
+
+    politica = (
+        "default-src 'self'; base-uri 'self'; object-src 'none'; "
+        "frame-ancestors 'none'; form-action 'self'; script-src 'self'; "
+        "style-src-elem 'self' https://fonts.googleapis.com; "
+        "style-src-attr 'unsafe-inline'; "
+        "font-src 'self' https://fonts.gstatic.com; img-src 'self'; "
+        "connect-src 'self'"
+    )
+    for resposta in (pagina, asset, erro_validacao):
+        assert resposta.headers["content-security-policy"] == politica
+        assert resposta.headers["x-content-type-options"] == "nosniff"
+        assert resposta.headers["x-frame-options"] == "DENY"
+        assert (
+            resposta.headers["referrer-policy"]
+            == "strict-origin-when-cross-origin"
+        )
+        assert (
+            resposta.headers["permissions-policy"]
+            == "camera=(), microphone=(), geolocation=()"
+        )
+
+    assert erro_validacao.status_code == 400
+
+
 def test_frontend_funciona_fora_do_diretorio_do_repositorio(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
 
@@ -210,7 +271,7 @@ def test_get_licitacoes_permite_consultar_todas_as_ufs(monkeypatch):
         licitacao_repository,
         "consultar_licitacoes",
         lambda uf, produto, **_kwargs: chamadas.append((uf, produto))
-        or (2, 2, [], None),
+        or (2, 2, [], None, None),
     )
 
     with TestClient(main.app) as cliente:
