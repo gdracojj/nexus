@@ -17,6 +17,10 @@ export const normalizar=r=>({
   uf:pick(r,['uf','unidadeOrgao.ufSigla']),
   prazo:pick(r,['data_encerramento_proposta','dataEncerramentoProposta']),
   valor:pick(r,['valor_estimado','valorTotalEstimado','valor_total_estimado']),
+  situacao:pick(r,['situacao']),
+  bucketPrazo:pick(r,['bucket_prazo']),
+  urgencia:pick(r,['urgencia']),
+  corQuadro:pick(r,['cor_quadro']),
   modalidade:pick(r,['modalidade','modalidade_nome','codigo_modalidade']),
   link:http(pick(r,['link_pncp','link','url']))
 });
@@ -44,6 +48,7 @@ export async function buscar(
     return{
       items:lista.map(normalizar),
       total:j?.total??lista.length,
+      totalConsultado:j?.total_consultado??j?.total??lista.length,
       page:j?.page??page,
       pageSize:j?.page_size??pageSize,
       totalPages:j?.total_pages??0,

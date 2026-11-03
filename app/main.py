@@ -6,10 +6,12 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.ufs import UFS_BRASIL
 from app.services.licitacao_service import consultar_licitacoes
+from app.core.rate_limit import ApiRateLimitMiddleware
 
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="NEXUS")
+app.add_middleware(ApiRateLimitMiddleware)
 
 CONTENT_SECURITY_POLICY = (
     "default-src 'self'; "
