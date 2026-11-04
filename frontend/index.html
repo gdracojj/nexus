@@ -7,7 +7,8 @@
   <title>NEXUS · Licitações</title>
   <meta name="theme-color" content="#09090d">
   <link rel="icon" href="assets/favicon.ico" sizes="any">
-  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
   <link rel="manifest" href="assets/site.webmanifest">
@@ -22,13 +23,13 @@
         <img class="logo" src="assets/nexus-logo.png" alt="" aria-hidden="true">
       </a>
       <nav class="main-nav" aria-label="Navegação principal">
-        <a href="#/geral" data-route="geral">Visão geral</a>
-        <a href="#/licitacoes" data-route="licitacoes">Licitações</a>
-        <span class="nav-off" aria-disabled="true">Atas · planejado</span>
+        <a href="#/geral" data-route="geral"><span class="nav-icon" aria-hidden="true">▦</span>Visão geral</a>
+        <a href="#/licitacoes" data-route="licitacoes"><span class="nav-icon" aria-hidden="true">▤</span>Licitações</a>
+        <span class="nav-off" aria-disabled="true"><span class="nav-icon" aria-hidden="true">▣</span>Atas · planejado</span>
       </nav>
       <div class="top-actions">
         <span id="fonte" class="source muted">Inteligência em Licitações</span>
-        <button id="tema" class="btn" type="button" aria-pressed="false">Tema escuro</button>
+        <button id="tema" class="btn theme-toggle" type="button" aria-label="Alternar tema" title="Alternar tema" aria-pressed="false"><span class="theme-icon" aria-hidden="true">☾</span></button>
       </div>
     </div>
   </header>

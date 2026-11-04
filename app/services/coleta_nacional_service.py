@@ -1,8 +1,25 @@
 import time
 
+from app.services.licitacao_service import sincronizar_licitacoes
+
+
+UFS_BRASIL = (
+    "AC", "AL", "AP", "AM", "BA", "CE", "DF",
+    "ES", "GO", "MA", "MT", "MS", "MG", "PA",
+    "PB", "PR", "PE", "PI", "RJ", "RN", "RS",
+    "RO", "RR", "SC", "SP", "SE", "TO",
+)
+
 INTERVALO_ENTRE_UFS = 5.0
 
+
 def sincronizar_todas_ufs() -> dict:
+    """
+    Executa a sincronização das 27 UFs em sequência.
+
+    Uma falha individual não interrompe as demais coletas.
+    """
+
     resultados = []
 
     for indice, uf in enumerate(UFS_BRASIL):
@@ -18,6 +35,11 @@ def sincronizar_todas_ufs() -> dict:
                 "erro": None,
             })
 
+            print(
+                f"Coleta de {uf} concluída: "
+                f"{quantidade} registros."
+            )
+
         except Exception as erro:
             resultados.append({
                 "uf": uf,
@@ -26,18 +48,28 @@ def sincronizar_todas_ufs() -> dict:
                 "erro": type(erro).__name__,
             })
 
-        # Não aguarda depois da última UF.
+            print(
+                f"Falha na coleta de {uf}: "
+                f"{type(erro).__name__}."
+            )
+
+        # Aguarda antes de iniciar a próxima UF.
         if indice < len(UFS_BRASIL) - 1:
             time.sleep(INTERVALO_ENTRE_UFS)
 
     concluidas = sum(
-        r["status"] == "concluida" for r in resultados
+        resultado["status"] == "concluida"
+        for resultado in resultados
     )
+
     falhas = sum(
-        r["status"] == "falhou" for r in resultados
+        resultado["status"] == "falhou"
+        for resultado in resultados
     )
+
     total_registros = sum(
-        r["registros_processados"] for r in resultados
+        resultado["registros_processados"]
+        for resultado in resultados
     )
 
     return {
