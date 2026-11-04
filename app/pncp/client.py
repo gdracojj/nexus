@@ -13,7 +13,7 @@ from app.pncp.parser import (
 
 URL_PNCP = "https://pncp.gov.br/api/consulta/v1/contratacoes/proposta"
 
-INTERVALO_ENTRE_PAGINAS = 1.0
+INTERVALO_ENTRE_PAGINAS = 2.5
 MAX_TENTATIVAS = 5
 MAX_ESPERA_RETRY_AFTER = 60
 MAX_PAGINAS_CONSULTA = 100
@@ -132,11 +132,9 @@ def buscar_pagina(
         espera = _calcular_espera_retry_after(retry_after)
 
         if espera is None:
-            espera = 2 ** tentativa
-        elif espera > MAX_ESPERA_RETRY_AFTER:
-            raise requests.exceptions.HTTPError(
-                "Retry-After excede o limite máximo de espera.",
-                response=resposta,
+            espera = min(
+                (2 ** tentativa) + random.uniform(0, 2),
+                MAX_ESPERA_RETRY_AFTER,
             )
 
         if resposta.status_code == 429:
