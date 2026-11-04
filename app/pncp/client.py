@@ -1,3 +1,4 @@
+
 import time
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -13,7 +14,7 @@ from app.pncp.parser import (
 
 URL_PNCP = "https://pncp.gov.br/api/consulta/v1/contratacoes/proposta"
 
-INTERVALO_ENTRE_PAGINAS = 1.0
+INTERVALO_ENTRE_PAGINAS = 2.5
 MAX_TENTATIVAS = 5
 MAX_ESPERA_RETRY_AFTER = 60
 MAX_PAGINAS_CONSULTA = 110
@@ -96,6 +97,7 @@ def _calcular_espera_retry_after(
     return espera
 
 
+
 def buscar_pagina(
     url: str,
     parametros: dict,
@@ -106,6 +108,7 @@ def buscar_pagina(
 
     for tentativa in range(1, MAX_TENTATIVAS + 1):
         tempo_restante = _verificar_prazo(prazo_final)
+
         try:
             resposta = requests.get(
                 url,
@@ -113,8 +116,10 @@ def buscar_pagina(
                 timeout=min(TIMEOUT_REQUISICAO_SEGUNDOS, tempo_restante),
             )
             _verificar_prazo(prazo_final)
+
         except requests.exceptions.SSLError:
             raise
+
         except (
             requests.exceptions.Timeout,
             requests.exceptions.ConnectionError,
@@ -122,12 +127,14 @@ def buscar_pagina(
             if tentativa == MAX_TENTATIVAS:
                 raise
 
-            espera = 2**tentativa
+            espera = 2 ** tentativa
+
             print(
                 f"Falha transitória de comunicação com o PNCP. "
                 f"Tentativa {tentativa}/{MAX_TENTATIVAS}. "
-                f"Aguardando {espera}s..."
+                f"Aguardando {espera:.2f}s..."
             )
+
             _aguardar_com_prazo(espera, prazo_final)
             continue
 
@@ -138,22 +145,26 @@ def buscar_pagina(
         retry_after = resposta.headers.get("Retry-After")
         espera = _calcular_espera_retry_after(retry_after)
 
+        # Fallback exponencial quando Retry-After está ausente ou inválido.
         if espera is None:
             espera = 2 ** tentativa
-        elif espera > MAX_ESPERA_RETRY_AFTER:
+
+        # Não aceita tempos de espera acima do limite configurado.
+        if espera > MAX_ESPERA_RETRY_AFTER:
             raise requests.exceptions.HTTPError(
-                "Retry-After excede o limite máximo de espera.",
-                response=resposta,
+                "Retry-After excede o limite máximo"
             )
 
         if resposta.status_code == 429:
             motivo = "rate limitado"
         else:
-            motivo = f"resposta HTTP {resposta.status_code} transitória"
+            motivo = (
+                f"resposta HTTP {resposta.status_code} transitória"
+            )
 
         print(
             f"PNCP {motivo}. Tentativa {tentativa}/{MAX_TENTATIVAS}. "
-            f"Aguardando {espera}s..."
+            f"Aguardando {espera:.2f}s..."
         )
 
         if tentativa == MAX_TENTATIVAS:
@@ -162,6 +173,7 @@ def buscar_pagina(
         _aguardar_com_prazo(espera, prazo_final)
 
     raise RuntimeError("Não foi possível consultar o PNCP.")
+
 
 
 def buscar_licitacoes(

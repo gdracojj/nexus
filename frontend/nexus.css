@@ -270,3 +270,73 @@ dd { margin: 0; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Cabeçalho com a marca centralizada e navegação à esquerda. */
+.topbar-inner { position: relative; justify-content: space-between; }
+.brand { position: absolute; left: 50%; min-width: 0; margin: 0; transform: translateX(-50%); }
+.logo { object-position: center; }
+.main-nav { position: relative; z-index: 2; order: 0; margin-right: auto; gap: 8px; }
+.top-actions { position: relative; z-index: 2; margin-left: auto; }
+
+/* Cada seção da navegação usa uma cor da identidade NEXUS. */
+.main-nav a, .main-nav .nav-off {
+  border: 1px solid var(--nav-color);
+  background: var(--nav-fill);
+  color: var(--nav-text);
+  font-weight: 600;
+  transition: color 180ms ease, background 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+.main-nav a:nth-of-type(1) { --nav-color: var(--blue); --nav-fill: transparent; --nav-text: var(--blue-2); }
+.main-nav a:nth-of-type(2) { --nav-color: var(--red); --nav-fill: transparent; --nav-text: var(--red-2); }
+.main-nav .nav-off { --nav-color: var(--green); --nav-fill: transparent; --nav-text: var(--green-2); }
+.nav-icon { display: inline-grid; width: 23px; height: 23px; flex: none; place-items: center; margin-right: 7px; border: 1px solid var(--nav-color); border-radius: 50%; color: var(--nav-text); font-size: 12px; line-height: 1; }
+.main-nav a:hover, .main-nav a[aria-current="page"], .main-nav .nav-off:hover { transform: translateY(-1px); }
+.main-nav a:hover, .main-nav a[aria-current="page"], .main-nav .nav-off:hover { background: var(--nav-fill); }
+[data-theme="light"] .main-nav a, [data-theme="light"] .main-nav .nav-off {
+  background: var(--nav-color);
+  color: #fff;
+}
+[data-theme="light"] .nav-icon { border-color: rgb(255 255 255 / 68%); color: #fff; }
+[data-theme="light"] .main-nav a:hover, [data-theme="light"] .main-nav a[aria-current="page"], [data-theme="light"] .main-nav .nav-off:hover {
+  background: color-mix(in srgb, var(--nav-color) 84%, #000);
+  color: #fff;
+}
+
+/* Botão de tema compacto com símbolo correspondente ao tema ativo. */
+#tema.theme-toggle { display: grid; width: 42px; min-width: 42px; height: 42px; min-height: 42px; place-items: center; padding: 0; border-radius: 50%; font-size: 21px; line-height: 1; }
+.theme-icon { display: block; }
+
+/* Reduz o destaque do prazo e compacta os painéis da visão geral. */
+.hero { gap: 5px; margin: 16px 0 22px; padding: 17px 20px; }
+.hero b { font-size: clamp(30px, 3.5vw, 42px); }
+.cols > .panel { padding: 16px; }
+.cols > .panel h2 { margin-bottom: 12px; font-size: 17px; }
+.cols .card { grid-template-columns: 125px minmax(0, 1fr); border-radius: 12px; }
+.cols .card .bd { gap: 3px; padding: 10px; }
+.uf { gap: 8px; margin: 9px 0; }
+.metrics > div { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
+.metrics > div b { font-size: clamp(20px, 2vw, 26px); line-height: 1; }
+.metrics > div span { line-height: 1.35; }
+.cols .card { grid-template-columns: 108px minmax(0, 1fr); }
+.cols .card .bd { gap: 2px; padding: 8px 9px; }
+.cols .card .t { font-size: 12px; line-height: 1.35; }
+.cols .card .s { font-size: 9px; }
+.cols .card .deadline-pill { min-height: 25px; padding: 4px 7px; font-size: 9px; }
+.cols .list { gap: 6px; }
+.cols .card { grid-template-columns: 96px minmax(0, 1fr); border-radius: 10px; }
+.cols .card .bd { padding: 6px 8px; }
+.cols .card .deadline-pill { min-height: 18px; padding: 2px 5px; border-radius: 999px; font-size: 7px; line-height: 1.2; }
+.hero { gap: 3px; margin: 12px 0 18px; padding: 12px 16px; }
+.hero b { font-size: clamp(26px, 3vw, 36px); }
+
+@media (max-width: 700px) {
+  .topbar-inner { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); grid-template-rows: auto auto; gap: 8px 10px; }
+  .brand { position: static; grid-column: 2; grid-row: 1; justify-self: center; transform: none; }
+  .main-nav { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; width: 100%; margin: 0; overflow-x: auto; }
+  .top-actions { grid-column: 3; grid-row: 1; justify-self: end; margin: 0; }
+  .logo { width: 112px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .main-nav a, .main-nav .nav-off, #tema.theme-toggle { transition: none; }
+}
