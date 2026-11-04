@@ -1,6 +1,5 @@
 # Nexus — Engenharia de Dados e Analytics para Licitações Públicas
 
-![Status](https://img.shields.io/badge/status-em_desenvolvimento-orange)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.143.0-009688?logo=fastapi)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-4169E1?logo=postgresql)
