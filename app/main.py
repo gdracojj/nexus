@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 
+from app.core.ufs import UFS_BRASIL
 from app.services.licitacao_service import consultar_licitacoes
 from app.core.rate_limit import ApiRateLimitMiddleware
 
@@ -12,11 +13,39 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="NEXUS")
 app.add_middleware(ApiRateLimitMiddleware)
 
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "base-uri 'self'; "
+    "object-src 'none'; "
+    "frame-ancestors 'none'; "
+    "form-action 'self'; "
+    "script-src 'self'; "
+    "style-src-elem 'self' https://fonts.googleapis.com; "
+    "style-src-attr 'unsafe-inline'; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "img-src 'self'; "
+    "connect-src 'self'"
+)
+
+
+@app.middleware("http")
+async def aplicar_headers_seguranca(request, call_next):
+    resposta = await call_next(request)
+    if request.url.path not in {"/docs", "/redoc", "/docs/oauth2-redirect"}:
+        resposta.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+    resposta.headers["X-Content-Type-Options"] = "nosniff"
+    resposta.headers["X-Frame-Options"] = "DENY"
+    resposta.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    resposta.headers["Permissions-Policy"] = (
+        "camera=(), microphone=(), geolocation=()"
+    )
+    return resposta
+
 
 @app.get("/api/licitacoes")
 def listar_licitacoes(
     uf: str | None = None,
-    produto: str = "",
+    produto: str = Query(default="", max_length=100),
     page: int = Query(default=1, ge=1, le=10_000),
     page_size: int = Query(default=25, ge=1, le=100),
     prazo_dias: int | None = Query(default=None, ge=1, le=30),
@@ -24,10 +53,10 @@ def listar_licitacoes(
     uf = uf.strip().upper() if uf else None
     produto = produto.strip().lower()
 
-    if uf is not None and len(uf) != 2:
+    if uf is not None and uf not in UFS_BRASIL:
         raise HTTPException(
             status_code=400,
-            detail="Informe a sigla do estado com 2 letras.",
+            detail="Informe uma sigla de UF válida.",
         )
 
     try:
@@ -36,6 +65,7 @@ def listar_licitacoes(
             total,
             resultados,
             ultima_sincronizacao,
+            ultima_execucao,
         ) = consultar_licitacoes(
             estado=uf,
             produto=produto,
@@ -63,6 +93,7 @@ def listar_licitacoes(
         "total_pages": (total + page_size - 1) // page_size,
         "resultados": resultados,
         "ultima_sincronizacao": ultima_sincronizacao,
+        "ultima_execucao": ultima_execucao,
     }
 
 

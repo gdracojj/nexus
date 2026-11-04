@@ -270,12 +270,12 @@ def test_buscar_licitacoes_compartilha_um_prazo_entre_paginas(monkeypatch):
     monkeypatch.setattr(client, "buscar_pagina", buscar_pagina_fake)
 
     assert client.buscar_licitacoes("RJ") == []
-    assert prazos == [130.0, 130.0]
+    assert prazos == [310.0, 310.0]
 
 
 def test_buscar_licitacoes_interrompe_paginacao_ao_exceder_prazo(monkeypatch):
     chamadas = []
-    relogio = iter([0.0, 1.0, 2.0, 3.0, 4.0, 121.0])
+    relogio = iter([0.0, 1.0, 2.0, 3.0, 4.0, 301.0])
 
     def buscar_pagina_fake(_url, parametros, *, prazo_final):
         chamadas.append(parametros["pagina"])
