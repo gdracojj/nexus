@@ -1,13 +1,16 @@
 # Nexus — Engenharia de Dados e Analytics para Licitações Públicas
 
-![Nexus](frontend/assets/nexus-logo-light.png)
-
 ![Status](https://img.shields.io/badge/status-em_desenvolvimento-orange)
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.143.0-009688?logo=fastapi)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-4169E1?logo=postgresql)
-![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-ORM-D71F00?logo=sqlalchemy)
-![Pytest](https://img.shields.io/badge/Tests-Pytest-0A9EDC?logo=pytest)
+
+<div align="center">
+
+### Stack tecnológica
+
+| Backend & API | Dados & Persistência | Qualidade | Frontend & Versionamento |
+|:--:|:--:|:--:|:--:|
+| ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)<br>![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white) | ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)<br>![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-D71F00?style=for-the-badge&logo=sqlalchemy&logoColor=white) | ![Pytest](https://img.shields.io/badge/Pytest-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white) | ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)<br>![HTML5](https://img.shields.io/badge/HTML5-E34F26?style=for-the-badge&logo=html5&logoColor=white)<br>![CSS3](https://img.shields.io/badge/CSS3-1572B6?style=for-the-badge&logo=css3&logoColor=white)<br>![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white) |
+
+</div>
 
 O **Nexus** é uma plataforma em desenvolvimento de **Engenharia de Dados e Analytics** voltada à coleta, transformação, organização e exploração de dados de contratações públicas disponibilizados pelo **Portal Nacional de Contratações Públicas (PNCP)**.
 
@@ -64,23 +67,7 @@ O Nexus utiliza uma arquitetura modular em camadas, separando comunicação exte
 
 ### Fluxo de dados
 
-```mermaid
-flowchart TD
-    A[Fonte externa: PNCP] --> B[PNCP Client]
-    B --> C[Extração e paginação]
-    C --> D[Parser / ETL]
-    D --> E[Normalização e validação]
-    E --> F[Data Services]
-    F --> G[Repository]
-    G --> H[(PostgreSQL)]
-    H --> I[FastAPI / API REST]
-    I --> J[Frontend Nexus]
-    J --> K[Visualização analítica]
-
-    H --> L[Consultas SQL / Analytics]
-    L --> J
-    M[CLI de coleta] --> B
-```
+![Diagrama de arquitetura do Nexus](docs/arquitetura-nexus.svg)
 
 A coleta é executada separadamente da API de leitura. Isso permite que o painel continue consultando os dados já persistidos mesmo quando o PNCP estiver indisponível.
 
