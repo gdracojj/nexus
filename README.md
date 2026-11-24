@@ -1,7 +1,5 @@
 # Nexus — Engenharia de Dados e Analytics para Licitações Públicas
 
-![Status](https://img.shields.io/badge/status-em_desenvolvimento-orange)
-
 <div align="center">
 
 ### Stack tecnológica
