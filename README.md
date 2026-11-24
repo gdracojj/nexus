@@ -10,7 +10,7 @@
 
 </div>
 
-O **Nexus** é uma plataforma em desenvolvimento de **Engenharia de Dados e Analytics** voltada à coleta, transformação, organização e exploração de dados de contratações públicas disponibilizados pelo **Portal Nacional de Contratações Públicas (PNCP)**.
+O **Nexus** é uma plataforma de **Engenharia de Dados e Analytics** voltada à coleta, transformação, organização e exploração de dados de contratações públicas disponibilizados pelo **Portal Nacional de Contratações Públicas (PNCP)**.
 
 O projeto transforma dados provenientes de uma API pública em informações estruturadas e consultáveis, utilizando um pipeline de processamento desenvolvido em Python, persistência relacional em PostgreSQL e uma camada de disponibilização por API REST integrada a um painel analítico.
 
@@ -682,7 +682,7 @@ A configuração efetiva depende dos valores definidos no ambiente e dos padrõe
 
 ## 14. Limitações conhecidas
 
-O Nexus permanece em desenvolvimento. As seguintes limitações são consideradas no planejamento técnico:
+As seguintes limitações técnicas são consideradas no planejamento do Nexus:
 
 - A coleta depende da disponibilidade e do comportamento da API do PNCP.
 - A execução nacional precisa ser validada em operação real para medir sua taxa de sucesso.
@@ -765,4 +765,4 @@ Desenvolvimento do Nexus com foco em Engenharia de Dados, integração de sistem
 
 ---
 
-*O Nexus é um projeto em desenvolvimento. Seu objetivo é evoluir continuamente como uma plataforma de dados aplicada ao domínio das contratações públicas, combinando engenharia, confiabilidade e análise de informações.*
+*O Nexus é uma plataforma de dados aplicada ao domínio das contratações públicas, combinando engenharia, confiabilidade e análise de informações.*
