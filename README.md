@@ -1,5 +1,7 @@
 # Nexus — Engenharia de Dados e Analytics para Licitações Públicas
 
+![Nexus](frontend/assets/nexus-logo-light.png)
+
 ![Status](https://img.shields.io/badge/status-em_desenvolvimento-orange)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.143.0-009688?logo=fastapi)
@@ -62,50 +64,22 @@ O Nexus utiliza uma arquitetura modular em camadas, separando comunicação exte
 
 ### Fluxo de dados
 
-```text
-                   FONTE EXTERNA
-                        |
-                        v
-                  API DO PNCP
-                        |
-                        v
-                  PNCP CLIENT
-                        |
-              Extração e paginação
-                        |
-                        v
-                PARSING / ETL
-                        |
-             Normalização e validação
-                        |
-                        v
-                 DATA SERVICES
-                        |
-              Regras de processamento
-                        |
-                        v
-                  REPOSITORY
-                        |
-              UPSERT / CHECKPOINT
-                        |
-                        v
-                   POSTGRESQL
-                        |
-             +----------+----------+
-             |                     |
-             v                     v
-          FASTAPI             CONSULTAS SQL
-             |                     |
-             v                     v
-        API REST             EXPLORAÇÃO ANALÍTICA
-             |                     |
-             +----------+----------+
-                        |
-                        v
-                  FRONTEND NEXUS
-                        |
-                        v
-              VISUALIZAÇÃO DE DADOS
+```mermaid
+flowchart TD
+    A[Fonte externa: PNCP] --> B[PNCP Client]
+    B --> C[Extração e paginação]
+    C --> D[Parser / ETL]
+    D --> E[Normalização e validação]
+    E --> F[Data Services]
+    F --> G[Repository]
+    G --> H[(PostgreSQL)]
+    H --> I[FastAPI / API REST]
+    I --> J[Frontend Nexus]
+    J --> K[Visualização analítica]
+
+    H --> L[Consultas SQL / Analytics]
+    L --> J
+    M[CLI de coleta] --> B
 ```
 
 A coleta é executada separadamente da API de leitura. Isso permite que o painel continue consultando os dados já persistidos mesmo quando o PNCP estiver indisponível.
