@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+<rect width="1600" height="900" fill="#fff"/>
+<style>
+ text{font-family:Inter,Arial,sans-serif;fill:#172033}.title{font-size:34px;font-weight:700}.sub{font-size:17px;fill:#64748b}.node{fill:#fff;stroke-width:2.5}.label{font-size:19px;font-weight:600;text-anchor:middle}.small{font-size:16px;font-weight:500;text-anchor:middle}.arrow{fill:none;stroke:#64748b;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+</style>
+<text x="800" y="58" text-anchor="middle" class="title">Arquitetura de dados — Nexus</text>
+<text x="800" y="91" text-anchor="middle" class="sub">Coleta, transformação, persistência e disponibilização analítica</text>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b"/></marker></defs>
+<g class="arrow" marker-end="url(#arrow)">
+<path d="M175 255H205"/><path d="M355 255H385"/><path d="M535 255H565"/><path d="M715 255H745"/><path d="M895 255H925"/><path d="M1075 255H1105"/><path d="M1255 255H1285"/><path d="M1435 255H1465"/>
+<path d="M280 500V390H460V320"/><path d="M1000 320V430H1130"/><path d="M1280 500V390H1360V320"/>
+</g>
+<g>
+<rect class="node" x="25" y="190" width="150" height="130" rx="16" stroke="#7c3aed" fill="#f5f0ff"/><text class="label" x="100" y="240">Fonte externa</text><text class="small" x="100" y="270">PNCP</text>
+<rect class="node" x="205" y="190" width="150" height="130" rx="16" stroke="#7c3aed"/><text class="label" x="280" y="240">API do</text><text class="small" x="280" y="270">PNCP</text>
+<rect class="node" x="385" y="190" width="150" height="130" rx="16" stroke="#7c3aed" fill="#f5f0ff"/><text class="label" x="460" y="240">PNCP Client</text><text class="small" x="460" y="270">HTTP / retries</text>
+<rect class="node" x="565" y="190" width="150" height="130" rx="16" stroke="#3b82f6"/><text class="label" x="640" y="240">Extração</text><text class="small" x="640" y="270">e paginação</text>
+<rect class="node" x="745" y="190" width="150" height="130" rx="16" stroke="#3b82f6"/><text class="label" x="820" y="240">Parser / ETL</text><text class="small" x="820" y="270">parse e limpeza</text>
+<rect class="node" x="925" y="190" width="150" height="130" rx="16" stroke="#3b82f6"/><text class="label" x="1000" y="240">Validação</text><text class="small" x="1000" y="270">e normalização</text>
+<rect class="node" x="1105" y="190" width="150" height="130" rx="16" stroke="#14b8a6"/><text class="label" x="1180" y="240">Data Services</text><text class="small" x="1180" y="270">regras de negócio</text>
+<rect class="node" x="1285" y="190" width="150" height="130" rx="16" stroke="#14b8a6"/><text class="label" x="1360" y="240">Repository</text><text class="small" x="1360" y="270">persistência</text>
+<rect class="node" x="1465" y="190" width="110" height="130" rx="16" stroke="#3b82f6" fill="#eff6ff"/><text class="label" x="1520" y="240">Postgres</text><text class="small" x="1520" y="270">SQL</text>
+<rect class="node" x="190" y="500" width="180" height="110" rx="16" stroke="#14b8a6" fill="#f0fdfa"/><text class="label" x="280" y="545">CLI de coleta</text><text class="small" x="280" y="575">execução do pipeline</text>
+<rect class="node" x="1040" y="500" width="180" height="110" rx="16" stroke="#7c3aed" fill="#f5f0ff"/><text class="label" x="1130" y="545">Consultas SQL</text><text class="small" x="1130" y="575">Analytics</text>
+<rect class="node" x="1270" y="500" width="180" height="110" rx="16" stroke="#14b8a6" fill="#f0fdfa"/><text class="label" x="1360" y="545">FastAPI</text><text class="small" x="1360" y="575">API REST</text>
+<rect class="node" x="1270" y="690" width="180" height="110" rx="16" stroke="#7c3aed" fill="#f5f0ff"/><text class="label" x="1360" y="735">Frontend Nexus</text><text class="small" x="1360" y="765">visualização analítica</text>
+<path class="arrow" marker-end="url(#arrow)" d="M1520 320V745H1450"/>
+</g>
+</svg>
